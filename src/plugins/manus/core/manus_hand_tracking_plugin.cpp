@@ -21,6 +21,8 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -60,7 +62,7 @@ bool is_openxr_extension_supported(const char* ext_name)
 SDKReturnCode get_raw_skeleton_node_count(uint32_t glove_id, uint32_t& node_count)
 {
 #if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64) || defined(_M_ARM)
-    // Manus SDK 3.1.1 ships different declarations for this call across architectures.
+    // Manus SDK 3.1.1 on ARM expects a pointer for the node count argument.
     return CoreSdk_GetRawSkeletonNodeCount(glove_id, &node_count);
 #else
     return CoreSdk_GetRawSkeletonNodeCount(glove_id, node_count);
@@ -69,6 +71,42 @@ SDKReturnCode get_raw_skeleton_node_count(uint32_t glove_id, uint32_t& node_coun
 
 // Must agree with JointStateTracker::DEFAULT_MAX_FLATBUFFER_SIZE on the consumer side.
 constexpr size_t kSensorFlatbufferSize = 4096;
+
+// Wrist-source selection: MANUS_WRIST_SOURCE = auto (default) | hand_tracking |
+// controller. Mirrors WUJI_GLOVE_WRIST_SOURCE in wuji_glove_plugin.cpp.
+//
+// "controller" exists because optical tracking degrades to a valid-but-untracked
+// pose when the HMD loses the hand, and inject_hand_data() keeps that stale pose
+// rather than falling back (it sets xdev_pose_valid on VALID, not TRACKED). The
+// whole hand then freezes in world space for as long as the runtime keeps
+// reporting the pose as valid. With controller adapters on the glove mount there
+// is nothing to gain from optical, so skipping it outright is both simpler and
+// steadier than trying to arbitrate between the two mid-session.
+enum class WristSource
+{
+    Auto,
+    HandTracking,
+    Controller,
+};
+
+WristSource wrist_source_from_env()
+{
+    const char* value = std::getenv("MANUS_WRIST_SOURCE");
+    if (value == nullptr || *value == '\0' || std::strcmp(value, "auto") == 0)
+    {
+        return WristSource::Auto;
+    }
+    if (std::strcmp(value, "hand_tracking") == 0)
+    {
+        return WristSource::HandTracking;
+    }
+    if (std::strcmp(value, "controller") == 0)
+    {
+        return WristSource::Controller;
+    }
+    std::cerr << "[Manus] unknown MANUS_WRIST_SOURCE '" << value << "', using 'auto'" << std::endl;
+    return WristSource::Auto;
+}
 
 } // anonymous namespace
 
@@ -318,11 +356,18 @@ void ManusTracker::initialize() noexcept(false)
             extensions.push_back(XR_NVX1_DEVICE_INTERFACE_BASE_EXTENSION_NAME);
         }
 
+        // Resolved before the extension list is built, not just before the trackers
+        // are created: under Controller the extension is never requested at all, so
+        // the runtime is not told this process wants optical hand tracking. Reading
+        // it only at tracker-creation time left the request in place, which made the
+        // setting quieter than it claims to be.
+        const WristSource wrist_source = wrist_source_from_env();
+
         // XR_MNDX_XDEV_SPACE_EXTENSION_NAME is optional: it enables optical (HMD) hand
         // tracking as a higher-quality wrist source. If the runtime does not advertise
         // it we fall back to controller-based tracking instead of crashing.
         bool xdev_extension_supported = false;
-        if (m_config.human)
+        if (m_config.human && wrist_source != WristSource::Controller)
         {
             xdev_extension_supported = is_openxr_extension_supported(XR_MNDX_XDEV_SPACE_EXTENSION_NAME);
             if (xdev_extension_supported)
@@ -382,6 +427,12 @@ void ManusTracker::initialize() noexcept(false)
         // Only attempt XDev hand tracker setup when the extension was actually enabled.
         // Skipping here avoids calling xrGetInstanceProcAddr for MNDX entry points that
         // the runtime would not have loaded.
+        //
+        // Under MANUS_WRIST_SOURCE=controller xdev_extension_supported is already false
+        // (the extension was not even requested above), so this is skipped and
+        // m_xdev_available stays false -- which is what makes inject_hand_data() take
+        // the controller branch every frame, since its optical branch is gated on
+        // exactly that flag.
         if (xdev_extension_supported)
         {
             initialize_xdev_hand_trackers();
@@ -390,7 +441,16 @@ void ManusTracker::initialize() noexcept(false)
         if (m_config.human)
         {
             std::cout << "[Manus] Initialized with wrist source: " << (m_xdev_available ? "HandTracking" : "Controllers")
+                      << (wrist_source == WristSource::Controller ? " (forced by MANUS_WRIST_SOURCE)" : "")
                       << std::endl;
+            if (wrist_source == WristSource::HandTracking && !m_xdev_available)
+            {
+                // Asked for optical, got controllers. Say so -- the wrist still moves, so
+                // the only other symptom is a silently different frame of reference.
+                std::cerr << "[Manus] MANUS_WRIST_SOURCE=hand_tracking requested but no optical "
+                             "XDev hand trackers were created; using controllers instead."
+                          << std::endl;
+            }
         }
         else
         {
@@ -444,6 +504,17 @@ void ManusTracker::shutdown_sdk()
 
 void ManusTracker::RegisterCallbacks()
 {
+    // Suppress the SDK's own stdout spam (e.g. "Datarate in … hz" every 10 s).
+    // The SDK prints Info-level stats unconditionally unless we intercept the log
+    // callback. Forward only Warn/Error so real problems still surface.
+    CoreSdk_RegisterCallbackForOnLog([](LogSeverity severity, const char* msg, uint32_t) {
+        if (severity >= LogSeverity::LogSeverity_Warn)
+        {
+            (severity >= LogSeverity::LogSeverity_Error ? std::cerr : std::cout)
+                << "[ManusSDK] " << (msg ? msg : "") << std::endl;
+        }
+    });
+
     CoreSdk_RegisterCallbackForRawSkeletonStream(OnSkeletonStream);
     CoreSdk_RegisterCallbackForLandscapeStream(OnLandscapeStream);
     if (m_config.sensors)

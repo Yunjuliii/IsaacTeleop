@@ -1,0 +1,25 @@
+{
+  "root": "/home/nvidia/IsaacTeleop/dataset",
+  "task": "pick up the cube",
+  "fps": 30,
+  "state_dim": 6,
+  "action_dim": 6,
+  "robot_type": "ego_centric",
+  "_comment_encoder": "h264_nvenc is the hardware encoder: software libx264 sustains only ~40 fps here against the 120 four cameras need, so it drops frames and its backlog ages every recorded frame. Set to 'h264' to fall back to software.",
+  "encoder": "h264_nvenc",
+
+  "_comment_wrist_source": "Which device positions the Manus wrist: controller | hand_tracking | auto. Passed to the plugin as MANUS_WRIST_SOURCE.",
+  "wrist_source": "controller",
+
+  "_comment_camera_lag_frames": "How many camera frames (at fps above) the cameras lag every other sensor; hand/head/controller columns are taken that far back so they match the image. Fractional values are allowed and often needed: at HAND_POLL_HZ=60 vs. 30fps cameras, half a camera frame is one poll tick, so a value like 3.5 is a legitimate answer, not just 3 or 4. Tuned empirically with measure_camera_controller_lag.py and checked with check_sync.py.",
+  "camera_lag_frames": 2.5,
+
+  "_comment_hand_frame": "stage = world poses, 25 joints x 7 = 175 floats/hand. local = wrist-relative hand shape, 24 joints x 7 = 168 (the wrist is identity in its own frame, so it is dropped). Under local the controller columns are the only world anchor.",
+  "hand_frame": "local",
+
+  "_comment_aim_to_wrist": "Optional, stage only. Rename to 'aim_to_wrist' to activate. Rigid transform from the controller aim pose to the wrist. Omitting it keeps the plugin's own kLeft/RightHandOffset -- that is what the injected poses already use, so it is exact and costs no extra math. Setting it makes the recorder strip that anchor and re-apply this one. quaternion is [qx, qy, qz, qw] and must be unit-norm. The values below ARE the plugin's defaults, calibrated for Quest 3 controllers on the Manus mount; Pico controllers sit differently, so treat them as a starting point rather than a correct answer.",
+  "_aim_to_wrist": {
+    "left":  {"position": [-0.1, 0.02, -0.02], "quaternion": [-0.70710678, -0.5, 0.0, 0.5]},
+    "right": {"position": [0.1, 0.02, -0.02],  "quaternion": [-0.70710678, 0.5, 0.0, 0.5]}
+  }
+}
