@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 """
-把 add_wrist_camera_pose.py 算出来的手腕在相机坐标系下的位置，投影回对应的
+把 add_wrist_pose.py 算出来的手腕在相机坐标系下的位置，投影回对应的
 head_left / head_right 鱼眼视频上画出来，生成带标注的新视频。
 
 投影用的是跟标定时同一个鱼眼畸变模型（cv2.fisheye.projectPoints，用
@@ -93,7 +93,7 @@ def draw_wrist(frame: np.ndarray, pose8: np.ndarray, K: np.ndarray, D: np.ndarra
 
 
 def process_episode(repo_id: str, root: Path, episode_index: int, cam_sides: list[str],
-                    out_dir: Path) -> None:
+                    out_dir: Path, max_seconds: float | None = None) -> None:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     ds = LeRobotDataset(repo_id=repo_id, root=str(root), episodes=[episode_index],
@@ -102,6 +102,8 @@ def process_episode(repo_id: str, root: Path, episode_index: int, cam_sides: lis
     if n == 0:
         print(f"  episode {episode_index}: 没有帧，跳过")
         return
+    if max_seconds is not None:
+        n = min(n, max(1, round(max_seconds * ds.fps)))
 
     for cam in cam_sides:
         K, D, (calib_w, calib_h) = load_intrinsics(cam)
@@ -167,6 +169,8 @@ def main() -> int:
     ap.add_argument("--cam", choices=("left", "right", "both"), default="both")
     ap.add_argument("--out-dir", type=Path, default=None,
                     help="默认: <dataset-root>/wrist_overlay/")
+    ap.add_argument("--max-seconds", type=float, default=None,
+                    help="每个 episode 只叠加开头这么多秒（默认：整段都叠加）")
     args = ap.parse_args()
 
     if not (args.dataset_root / "meta" / "info.json").exists():
@@ -179,7 +183,7 @@ def main() -> int:
     needed = [f"observation.wrist_left_in_head_left", f"observation.wrist_right_in_head_left"]
     if not all(k in info["features"] for k in needed):
         print("ERROR: 数据集里没有 observation.wrist_*_in_head_* 列，"
-              "先跑 add_wrist_camera_pose.py。", file=sys.stderr)
+              "先跑 add_wrist_pose.py。", file=sys.stderr)
         return 1
 
     cam_sides = ["left", "right"] if args.cam == "both" else [args.cam]
@@ -190,7 +194,8 @@ def main() -> int:
     print(f"处理 {len(episodes)} 个 episode，相机: {cam_sides}，输出到: {out_dir}\n")
 
     for ep in episodes:
-        process_episode(args.repo_id, args.dataset_root, ep, cam_sides, out_dir)
+        process_episode(args.repo_id, args.dataset_root, ep, cam_sides, out_dir,
+                        max_seconds=args.max_seconds)
 
     print("\n完成。")
     return 0

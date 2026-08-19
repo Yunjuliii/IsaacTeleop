@@ -867,21 +867,8 @@ def record_episode(
             continue
 
         frame_data: dict = {"task": task}
-        # Keep the capture stamp, do not discard it. header.stamp is the frame's
-        # capture time (gscam2 runs with use_gst_timestamps:=true), so this column
-        # is the only record of how far apart the sensors in a row really were --
-        # LeRobot's own timestamp column is frame_index / fps, which is fiction.
-        for name, (img, stamp, t_recv) in frames.items():
+        for name, (img, _stamp, _t_recv) in frames.items():
             frame_data[f"observation.images.{name}"] = img
-            frame_data[f"observation.capture_time.{name}"] = np.array(
-                [stamp], dtype=np.float64)  # float32 cannot hold epoch seconds
-            frame_data[f"observation.recv_time.{name}"] = np.array(
-                [t_recv], dtype=np.float64)
-        # Stamped once per row, after every camera is in hand: recv_time to here
-        # is how long the frame waited in FrameQueue for the loop to come round,
-        # which is the one downstream cost that grows when the recorder is busy.
-        frame_data["observation.row_time"] = np.array(
-            [buf.get_clock().now().nanoseconds * 1e-9], dtype=np.float64)
         frame_data["observation.state"] = np.zeros(state_dim, dtype=np.float32)
         frame_data["action"] = np.zeros(action_dim, dtype=np.float32)
 
@@ -904,10 +891,6 @@ def record_episode(
             frame_data["observation.head_pose"]        = head_pose
             frame_data["observation.controller_left"]  = ctrl_left
             frame_data["observation.controller_right"] = ctrl_right
-            # The time of the sample actually used, not of the lookup, so
-            # check_sync.py measures the compensated relationship.
-            frame_data["observation.sample_time.hand"] = np.array(
-                [t_hand], dtype=np.float64)
 
         dataset.add_frame(frame_data)
         frame_i += 1
@@ -1113,17 +1096,6 @@ def main() -> int:
             "shape": (h, w, 3),
             "names": ["height", "width", "channels"],
         }
-        # float64: epoch seconds are ~1.8e9, where float32 resolves to ~128 s.
-        features[f"observation.capture_time.{name}"] = {
-            "dtype": "float64",
-            "shape": (1,),
-            "names": ["seconds"],
-        }
-        features[f"observation.recv_time.{name}"] = {
-            "dtype": "float64",
-            "shape": (1,),
-            "names": ["seconds"],
-        }
     features["observation.state"] = {
         "dtype": "float32",
         "shape": (state_dim,),
@@ -1133,11 +1105,6 @@ def main() -> int:
         "dtype": "float32",
         "shape": (action_dim,),
         "names": [f"motor_{i}" for i in range(action_dim)],
-    }
-    features["observation.row_time"] = {
-        "dtype": "float64",
-        "shape": (1,),
-        "names": ["seconds"],
     }
     if use_hand:
         features["observation.head_pose"] = {
@@ -1154,13 +1121,6 @@ def main() -> int:
             "dtype": "float32",
             "shape": (CONTROLLER_POSE_DIM,),
             "names": CONTROLLER_POSE_NAMES,
-        }
-        # When this row's pose was sampled, on the image header clock. Subtract
-        # a capture_time column from this to get that row's real sensor skew.
-        features["observation.sample_time.hand"] = {
-            "dtype": "float64",
-            "shape": (1,),
-            "names": ["seconds"],
         }
         if collect_hands:
             # Shape and names both follow hand_frame, so info.json stays self-describing:

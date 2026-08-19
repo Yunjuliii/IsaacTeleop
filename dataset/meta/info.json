@@ -31,24 +31,6 @@
         "is_depth_map": false
       }
     },
-    "observation.capture_time.head_left": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
-    "observation.recv_time.head_left": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
     "observation.images.head_right": {
       "dtype": "video",
       "shape": [
@@ -77,24 +59,6 @@
         "video.extra_options": {},
         "is_depth_map": false
       }
-    },
-    "observation.capture_time.head_right": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
-    "observation.recv_time.head_right": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
     },
     "observation.images.wrist_left": {
       "dtype": "video",
@@ -125,24 +89,6 @@
         "is_depth_map": false
       }
     },
-    "observation.capture_time.wrist_left": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
-    "observation.recv_time.wrist_left": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
     "observation.images.wrist_right": {
       "dtype": "video",
       "shape": [
@@ -172,24 +118,6 @@
         "is_depth_map": false
       }
     },
-    "observation.capture_time.wrist_right": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
-    "observation.recv_time.wrist_right": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
-      ]
-    },
     "observation.state": {
       "dtype": "float32",
       "shape": [
@@ -216,15 +144,6 @@
         "motor_3",
         "motor_4",
         "motor_5"
-      ]
-    },
-    "observation.row_time": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "names": [
-        "seconds"
       ]
     },
     "observation.head_pose": {
@@ -274,13 +193,68 @@
         "grip_valid"
       ]
     },
-    "observation.sample_time.hand": {
-      "dtype": "float64",
+    "observation.hand_left": {
+      "dtype": "float32",
       "shape": [
-        1
+        168
       ],
       "names": [
-        "seconds"
+        "thumb_metacarpal",
+        "thumb_proximal",
+        "thumb_distal",
+        "thumb_tip",
+        "index_metacarpal",
+        "index_proximal",
+        "index_intermediate",
+        "index_distal",
+        "index_tip",
+        "middle_metacarpal",
+        "middle_proximal",
+        "middle_intermediate",
+        "middle_distal",
+        "middle_tip",
+        "ring_metacarpal",
+        "ring_proximal",
+        "ring_intermediate",
+        "ring_distal",
+        "ring_tip",
+        "little_metacarpal",
+        "little_proximal",
+        "little_intermediate",
+        "little_distal",
+        "little_tip"
+      ]
+    },
+    "observation.hand_right": {
+      "dtype": "float32",
+      "shape": [
+        168
+      ],
+      "names": [
+        "thumb_metacarpal",
+        "thumb_proximal",
+        "thumb_distal",
+        "thumb_tip",
+        "index_metacarpal",
+        "index_proximal",
+        "index_intermediate",
+        "index_distal",
+        "index_tip",
+        "middle_metacarpal",
+        "middle_proximal",
+        "middle_intermediate",
+        "middle_distal",
+        "middle_tip",
+        "ring_metacarpal",
+        "ring_proximal",
+        "ring_intermediate",
+        "ring_distal",
+        "ring_tip",
+        "little_metacarpal",
+        "little_proximal",
+        "little_intermediate",
+        "little_distal",
+        "little_tip"
       ]
     },
     "timestamp": {
@@ -381,10 +355,42 @@
         "qw",
         "valid"
       ]
+    },
+    "observation.wrist_left_in_world": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    },
+    "observation.wrist_right_in_world": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
     }
   },
-  "total_episodes": 1,
-  "total_frames": 446,
+  "total_episodes": 25,
+  "total_frames": 3061,
   "total_tasks": 1,
   "chunks_size": 1000,
   "data_files_size_in_mb": 100,
@@ -393,6 +399,6 @@
   "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
   "robot_type": null,
   "splits": {
-    "train": "0:1"
+    "train": "0:25"
   }
 }
