@@ -31,22 +31,31 @@ import numpy as np
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dir", type=Path, required=True,
-                    help="collect_fisheye_calib.py 输出的 left/ 或 right/ 目录")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--dir",
+        type=Path,
+        required=True,
+        help="collect_fisheye_calib.py 输出的 left/ 或 right/ 目录",
+    )
     ap.add_argument("--rows", type=int, default=10, help="棋盘格行方向格子数")
     ap.add_argument("--cols", type=int, default=7, help="棋盘格列方向格子数")
     ap.add_argument("--square-size", type=float, default=0.025, help="格子实测边长，米")
-    ap.add_argument("--exclude", nargs="*", default=[],
-                    help="要排除的文件名（不含路径），比如某张图导致 Ill-conditioned "
-                         "matrix 报错时用这个跳过它，不用物理删文件")
+    ap.add_argument(
+        "--exclude",
+        nargs="*",
+        default=[],
+        help="要排除的文件名（不含路径），比如某张图导致 Ill-conditioned "
+        "matrix 报错时用这个跳过它，不用物理删文件",
+    )
     args = ap.parse_args()
 
     pattern = (args.cols - 1, args.rows - 1)  # 内角点数
 
     objp = np.zeros((1, pattern[0] * pattern[1], 3), np.float64)
-    objp[0, :, :2] = np.mgrid[0:pattern[0], 0:pattern[1]].T.reshape(-1, 2)
+    objp[0, :, :2] = np.mgrid[0 : pattern[0], 0 : pattern[1]].T.reshape(-1, 2)
     objp *= args.square_size
 
     objpoints, imgpoints = [], []
@@ -68,8 +77,11 @@ def main() -> int:
             image_size = gray.shape[::-1]
 
         found, corners = cv2.findChessboardCorners(
-            gray, pattern,
-            cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_FAST_CHECK + cv2.CALIB_CB_NORMALIZE_IMAGE,
+            gray,
+            pattern,
+            cv2.CALIB_CB_ADAPTIVE_THRESH
+            + cv2.CALIB_CB_FAST_CHECK
+            + cv2.CALIB_CB_NORMALIZE_IMAGE,
         )
         if not found:
             print(f"  跳过 {Path(fname).name}: 未检测到角点")
@@ -77,7 +89,10 @@ def main() -> int:
             continue
 
         corners_refined = cv2.cornerSubPix(
-            gray, corners, (3, 3), (-1, -1),
+            gray,
+            corners,
+            (3, 3),
+            (-1, -1),
             (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.1),
         )
         objpoints.append(objp)
@@ -86,7 +101,10 @@ def main() -> int:
 
     print(f"\n用于标定: {used} 张，跳过: {skipped} 张")
     if used < 10:
-        print("WARNING: 有效图像少于 10 张，标定结果可能不可靠，建议补拍。", file=sys.stderr)
+        print(
+            "WARNING: 有效图像少于 10 张，标定结果可能不可靠，建议补拍。",
+            file=sys.stderr,
+        )
 
     N = len(objpoints)
     K = np.zeros((3, 3))
@@ -102,12 +120,21 @@ def main() -> int:
 
     try:
         rms, K, D, rvecs, tvecs = cv2.fisheye.calibrate(
-            objpoints, imgpoints, image_size,
-            K, D, rvecs, tvecs, calib_flags,
+            objpoints,
+            imgpoints,
+            image_size,
+            K,
+            D,
+            rvecs,
+            tvecs,
+            calib_flags,
             (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6),
         )
     except cv2.error as e:
-        print(f"ERROR: 标定失败（可能是某张图病态，比如离得太近/太偏）: {e}", file=sys.stderr)
+        print(
+            f"ERROR: 标定失败（可能是某张图病态，比如离得太近/太偏）: {e}",
+            file=sys.stderr,
+        )
         print("  找出并删掉可疑的那几张图，重新跑。", file=sys.stderr)
         return 1
 

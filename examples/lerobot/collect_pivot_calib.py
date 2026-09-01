@@ -66,7 +66,7 @@ from scipy.spatial.transform import Rotation
 # ---------------------------------------------------------------------------
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-POLL_HZ = 60   # 手柄轮询频率
+POLL_HZ = 60  # 手柄轮询频率
 
 
 # ---------------------------------------------------------------------------
@@ -93,29 +93,36 @@ class ControllerBuffer:
     """
 
     def __init__(self) -> None:
-        from isaacteleop.retargeting_engine.deviceio_source_nodes import ControllersSource
+        from isaacteleop.retargeting_engine.deviceio_source_nodes import (
+            ControllersSource,
+        )
         from isaacteleop.retargeting_engine.interface import OutputCombiner
         from isaacteleop.retargeting_engine.tensor_types import ControllerInputIndex
-        from isaacteleop.teleop_session_manager import TeleopSession, TeleopSessionConfig
+        from isaacteleop.teleop_session_manager import (
+            TeleopSession,
+            TeleopSessionConfig,
+        )
 
         self._CI = ControllerInputIndex
         self._TeleopSession = TeleopSession
 
         controllers = ControllersSource(name="controllers")
-        pipeline = OutputCombiner({
-            "controller_left":  controllers.output(ControllersSource.LEFT),
-            "controller_right": controllers.output(ControllersSource.RIGHT),
-        })
+        pipeline = OutputCombiner(
+            {
+                "controller_left": controllers.output(ControllersSource.LEFT),
+                "controller_right": controllers.output(ControllersSource.RIGHT),
+            }
+        )
         self._cfg = TeleopSessionConfig(
             app_name="PivotCalib",
             pipeline=pipeline,
             plugins=[],
         )
         self._session = TeleopSession(self._cfg)
-        self._lock  = threading.Lock()
-        self._left  = np.zeros(8, dtype=np.float32)
+        self._lock = threading.Lock()
+        self._left = np.zeros(8, dtype=np.float32)
         self._right = np.zeros(8, dtype=np.float32)
-        self._stop  = threading.Event()
+        self._stop = threading.Event()
         self._ready = threading.Event()
         self._error: BaseException | None = None
         self._thread: threading.Thread | None = None
@@ -153,21 +160,21 @@ class ControllerBuffer:
             return out
         CI = self._CI
         if bool(ctrl[CI.GRIP_IS_VALID]):
-            out[0:3] = np.asarray(ctrl[CI.GRIP_POSITION],    dtype=np.float32)
+            out[0:3] = np.asarray(ctrl[CI.GRIP_POSITION], dtype=np.float32)
             out[3:7] = np.asarray(ctrl[CI.GRIP_ORIENTATION], dtype=np.float32)
-            out[7]   = 1.0
+            out[7] = 1.0
         return out
 
     def _run(self) -> None:
-        period   = 1.0 / POLL_HZ
+        period = 1.0 / POLL_HZ
         deadline = time.monotonic() + period
         while not self._stop.is_set():
             try:
                 result = self._session.step()
-                left  = self._extract(result["controller_left"])
+                left = self._extract(result["controller_left"])
                 right = self._extract(result["controller_right"])
                 with self._lock:
-                    self._left  = left
+                    self._left = left
                     self._right = right
                 if left[7] > 0.5 or right[7] > 0.5:
                     self._ready.set()
@@ -215,28 +222,28 @@ def solve_pivot(R_frames: np.ndarray, p_frames: np.ndarray) -> dict:
     if N < 10:
         raise ValueError(f"帧数太少（{N}），至少需要 10 帧")
 
-    R0 = R_frames[0]   # 参考帧旋转
-    p0 = p_frames[0]   # 参考帧位置
+    R0 = R_frames[0]  # 参考帧旋转
+    p0 = p_frames[0]  # 参考帧位置
 
     # 构造超定线性方程组：A · p_wrist_ctrl = b
     # 每帧贡献 3 行：(R_i − R_0) · p = p_0 − p_i
-    A = (R_frames[1:] - R0).reshape(-1, 3)       # (3(N-1), 3)
-    b = (p0 - p_frames[1:]).reshape(-1)           # (3(N-1),)
+    A = (R_frames[1:] - R0).reshape(-1, 3)  # (3(N-1), 3)
+    b = (p0 - p_frames[1:]).reshape(-1)  # (3(N-1),)
 
     p_wrist_ctrl, residuals_sq, rank, sv = np.linalg.lstsq(A, b, rcond=None)
     condition_number = float(sv[0] / sv[-1]) if sv[-1] > 1e-12 else float("inf")
 
     # 残差 RMS（mm）
     b_pred = A @ p_wrist_ctrl
-    rms_m  = float(np.sqrt(np.mean((b_pred - b) ** 2)))
+    rms_m = float(np.sqrt(np.mean((b_pred - b) ** 2)))
 
     # 锚点世界坐标（平均值）
-    pivots = R_frames @ p_wrist_ctrl + p_frames   # (N, 3)
+    pivots = R_frames @ p_wrist_ctrl + p_frames  # (N, 3)
     pivot_stage = pivots.mean(axis=0)
 
     return {
-        "p_wrist_ctrl":    p_wrist_ctrl,
-        "pivot_stage":     pivot_stage,
+        "p_wrist_ctrl": p_wrist_ctrl,
+        "pivot_stage": pivot_stage,
         "residual_rms_mm": rms_m * 1000.0,
         "condition_number": condition_number,
     }
@@ -245,8 +252,9 @@ def solve_pivot(R_frames: np.ndarray, p_frames: np.ndarray) -> dict:
 # ---------------------------------------------------------------------------
 # 采集
 # ---------------------------------------------------------------------------
-def collect_one_side(buf: ControllerBuffer, side: str,
-                     avg_frames: int = 10) -> tuple[np.ndarray, np.ndarray]:
+def collect_one_side(
+    buf: ControllerBuffer, side: str, avg_frames: int = 10
+) -> tuple[np.ndarray, np.ndarray]:
     """
     手动触发采集一侧手的转轴标定数据。
 
@@ -264,9 +272,9 @@ def collect_one_side(buf: ControllerBuffer, side: str,
     """
     assert side in ("left", "right")
 
-    print(f"\n{'━'*60}")
+    print(f"\n{'━' * 60}")
     print(f"  转轴标定  —  {side.upper()} 手")
-    print(f"{'━'*60}")
+    print(f"{'━' * 60}")
     print(f"""
   操作说明：
     1. 找到手腕上的骨性点（推荐：尺骨茎突，即手腕小拇指侧的突出骨点）
@@ -332,8 +340,10 @@ def collect_one_side(buf: ControllerBuffer, side: str,
 
         R_list.append(R_mean)
         p_list.append(p_mean)
-        print(f"  ✓ 采样 {n+1:3d}  pos=({p_mean[0]*1000:+.1f}, "
-              f"{p_mean[1]*1000:+.1f}, {p_mean[2]*1000:+.1f}) mm")
+        print(
+            f"  ✓ 采样 {n + 1:3d}  pos=({p_mean[0] * 1000:+.1f}, "
+            f"{p_mean[1] * 1000:+.1f}, {p_mean[2] * 1000:+.1f}) mm"
+        )
 
     return np.array(R_list), np.array(p_list)
 
@@ -342,18 +352,18 @@ def collect_one_side(buf: ControllerBuffer, side: str,
 # 打印 + 保存
 # ---------------------------------------------------------------------------
 def print_result(side: str, result: dict) -> None:
-    p   = result["p_wrist_ctrl"]
+    p = result["p_wrist_ctrl"]
     rms = result["residual_rms_mm"]
     cond = result["condition_number"]
 
-    print(f"\n{'═'*60}")
+    print(f"\n{'═' * 60}")
     print(f"  标定结果  —  {side.upper()} 手")
-    print(f"{'═'*60}")
+    print(f"{'═' * 60}")
     print(f"  p_wrist_ctrl_{side}（手柄坐标系下的手腕偏移）：")
-    print(f"    x = {p[0]*1000:+8.2f} mm")
-    print(f"    y = {p[1]*1000:+8.2f} mm")
-    print(f"    z = {p[2]*1000:+8.2f} mm")
-    print(f"    ‖p‖ = {np.linalg.norm(p)*1000:.2f} mm")
+    print(f"    x = {p[0] * 1000:+8.2f} mm")
+    print(f"    y = {p[1] * 1000:+8.2f} mm")
+    print(f"    z = {p[2] * 1000:+8.2f} mm")
+    print(f"    ‖p‖ = {np.linalg.norm(p) * 1000:.2f} mm")
     print()
     print(f"  残差 RMS：{rms:.2f} mm", end="")
     if rms < 3.0:
@@ -372,22 +382,21 @@ def print_result(side: str, result: dict) -> None:
         print("  ✗ 转动多样性不足（可能只绕一个轴转）")
 
 
-def save_results(out_dir: Path, side: str,
-                 result: dict,
-                 R_frames: np.ndarray,
-                 p_frames: np.ndarray) -> Path:
+def save_results(
+    out_dir: Path, side: str, result: dict, R_frames: np.ndarray, p_frames: np.ndarray
+) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"calib_pivot_{side}_{timestamp}.npz"
     np.savez(
         path,
         **{
-            f"p_wrist_ctrl_{side}":    result["p_wrist_ctrl"],
-            f"pivot_stage_{side}":     result["pivot_stage"],
+            f"p_wrist_ctrl_{side}": result["p_wrist_ctrl"],
+            f"pivot_stage_{side}": result["pivot_stage"],
             f"residual_rms_mm_{side}": np.array(result["residual_rms_mm"]),
             f"condition_number_{side}": np.array(result["condition_number"]),
-            f"R_ctrl_frames_{side}":   R_frames,
-            f"p_ctrl_frames_{side}":   p_frames,
+            f"R_ctrl_frames_{side}": R_frames,
+            f"p_ctrl_frames_{side}": p_frames,
         },
     )
     return path
@@ -401,12 +410,18 @@ def main() -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--side", choices=("left", "right", "both"),
-                    default="right",
-                    help="标定哪只手（默认：right）")
-    ap.add_argument("--out", type=Path,
-                    default=Path(__file__).parent / "calib_data" / "controller",
-                    help="输出目录（默认：calib_data/controller/，与此脚本同级）")
+    ap.add_argument(
+        "--side",
+        choices=("left", "right", "both"),
+        default="right",
+        help="标定哪只手（默认：right）",
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).parent / "calib_data" / "controller",
+        help="输出目录（默认：calib_data/controller/，与此脚本同级）",
+    )
     args = ap.parse_args()
 
     sides = ["left", "right"] if args.side == "both" else [args.side]
@@ -420,7 +435,7 @@ def main() -> int:
         with ControllerBuffer() as buf:
             print("\n等待手柄连接（最多 30 秒）...", end="", flush=True)
             if not buf.wait_ready(timeout=30.0):
-                print(f"\n错误：30 秒内未收到有效手柄数据", file=sys.stderr)
+                print("\n错误：30 秒内未收到有效手柄数据", file=sys.stderr)
                 return 1
             print(" ✓")
 

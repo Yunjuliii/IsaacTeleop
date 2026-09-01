@@ -110,8 +110,22 @@ WristSource wrist_source_from_env()
 
 } // anonymous namespace
 
-static constexpr XrPosef kLeftHandOffset = { { -0.70710678f, -0.5f, 0.0f, 0.5f }, { -0.1f, 0.02f, -0.02f } };
-static constexpr XrPosef kRightHandOffset = { { -0.70710678f, 0.5f, 0.0f, 0.5f }, { 0.1f, 0.02f, -0.02f } };
+// Aim-to-wrist offsets calibrated for this rig (controller strapped to the wrist,
+// 2026-08-25): offset = inv(T_grip->aim) . T_wrist->ctrl . C0, where T_grip->aim is
+// the measured grip->aim firmware constant (examples/lerobot/calib_data/grip_to_aim/),
+// T_wrist->ctrl is the pivot+rotation wrist calibration (calib_data/controller/), and
+// C0 remaps the calibrated wrist axes (X=dorsal, Y=ulnar/right radial/left, Z=distal)
+// to the Manus skeleton wrist convention. With these values the stage-frame WRIST
+// joint lands on the calibrated anatomical wrist instead of the vendor's nominal
+// held-controller guess. Raw-skeleton node 0 was measured to be identity (N0 == I,
+// examples/lerobot/measure_n0.py), so no extra term is needed.
+// Vendor nominal values (held controller):
+//   left  { { -0.70710678f, -0.5f, 0.0f, 0.5f }, { -0.1f, 0.02f, -0.02f } }
+//   right { { -0.70710678f,  0.5f, 0.0f, 0.5f }, {  0.1f, 0.02f, -0.02f } }
+static constexpr XrPosef kLeftHandOffset = { { 0.35957026f, 0.05137509f, 0.43123836f, 0.82589546f },
+                                             { 0.044895f, -0.123515f, 0.054711f } };
+static constexpr XrPosef kRightHandOffset = { { 0.33336273f, -0.06644838f, -0.48965076f, 0.80292966f },
+                                              { -0.043748f, -0.124802f, 0.052615f } };
 
 ManusTracker& ManusTracker::instance(const ManusPluginConfig& config) noexcept(false)
 {

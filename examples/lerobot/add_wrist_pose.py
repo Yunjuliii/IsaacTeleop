@@ -62,7 +62,9 @@ WRIST_POSE_NAMES = ["x", "y", "z", "qx", "qy", "qz", "qw", "valid"]
 # --------------------------------------------------------------------------- #
 # 标定加载
 # --------------------------------------------------------------------------- #
-def load_wrist_to_ctrl(controller_dir: Path, side: str) -> tuple[np.ndarray, np.ndarray]:
+def load_wrist_to_ctrl(
+    controller_dir: Path, side: str
+) -> tuple[np.ndarray, np.ndarray]:
     """跟 wrist_pose_viz_3d.py::load_calib 一致：取最新一份 pivot + rotation 标定。"""
     pivot_files = sorted(controller_dir.glob(f"calib_pivot_{side}_*.npz"))
     rot_files = sorted(controller_dir.glob(f"calib_rotation_{side}_*.npz"))
@@ -84,7 +86,9 @@ def pose_to_matrix(position: np.ndarray, quaternion_xyzw: np.ndarray) -> np.ndar
     return T
 
 
-def load_headset_to_head_cams(pico_intrinsics: Path, pico_to_head: Path) -> tuple[np.ndarray, np.ndarray]:
+def load_headset_to_head_cams(
+    pico_intrinsics: Path, pico_to_head: Path
+) -> tuple[np.ndarray, np.ndarray]:
     """返回 (T_headsetLocal->head_left, T_headsetLocal->head_right)，都是 4x4。"""
     pico = np.load(pico_intrinsics)
     # PICO legacy API 返回的 position/quaternion_xyzw 是 T_picoCam->headsetLocal：
@@ -107,8 +111,9 @@ def load_headset_to_head_cams(pico_intrinsics: Path, pico_to_head: Path) -> tupl
 # --------------------------------------------------------------------------- #
 # 批量位姿代数（N 帧一起算，避免逐行 for 循环拖慢大数据集）
 # --------------------------------------------------------------------------- #
-def batch_wrist_to_stage(ctrl: np.ndarray, p_wrist_ctrl: np.ndarray,
-                         R_wrist_ctrl: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def batch_wrist_to_stage(
+    ctrl: np.ndarray, p_wrist_ctrl: np.ndarray, R_wrist_ctrl: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """ctrl: (N, 8) = [x,y,z,qx,qy,qz,qw,valid]。返回 (R (N,3,3), t (N,3), valid (N,))。"""
     pc = ctrl[:, 0:3].astype(np.float64)
     qc = ctrl[:, 3:7].astype(np.float64)
@@ -118,14 +123,17 @@ def batch_wrist_to_stage(ctrl: np.ndarray, p_wrist_ctrl: np.ndarray,
     # 同样先替换成单位四元数再算，结果本来就会被下面的 valid 过滤掉。
     qc_safe = qc.copy()
     qc_safe[~valid] = [0.0, 0.0, 0.0, 1.0]
-    Rc = Rotation.from_quat(qc_safe).as_matrix()      # (N, 3, 3)，无效帧是占位值，valid 会滤掉
-    Rw = Rc @ R_wrist_ctrl                            # 手腕姿态，stage 系
-    pw = np.matmul(Rc, p_wrist_ctrl) + pc              # 手腕原点，stage 系
+    Rc = Rotation.from_quat(
+        qc_safe
+    ).as_matrix()  # (N, 3, 3)，无效帧是占位值，valid 会滤掉
+    Rw = Rc @ R_wrist_ctrl  # 手腕姿态，stage 系
+    pw = np.matmul(Rc, p_wrist_ctrl) + pc  # 手腕原点，stage 系
     return Rw, pw, valid
 
 
-def batch_stage_to_cam(head_pose: np.ndarray, T_headset_to_cam: np.ndarray
-                       ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def batch_stage_to_cam(
+    head_pose: np.ndarray, T_headset_to_cam: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """head_pose: (N, 7) = [x,y,z,qx,qy,qz,qw]。返回 T_stage->cam 逐帧的 (R, t, valid)。"""
     ph = head_pose[:, 0:3].astype(np.float64)
     qh = head_pose[:, 3:7].astype(np.float64)
@@ -137,20 +145,23 @@ def batch_stage_to_cam(head_pose: np.ndarray, T_headset_to_cam: np.ndarray
     # 返回垃圾值，所以先把这些行替换成单位四元数再算，结果本来就会被 valid 滤掉。
     qh_safe = qh.copy()
     qh_safe[~valid] = [0.0, 0.0, 0.0, 1.0]
-    Rh = Rotation.from_quat(qh_safe).as_matrix()       # (N, 3, 3)，无效帧这里是占位值，valid 会滤掉
-    Rh_inv = np.transpose(Rh, (0, 2, 1))                # R^T
-    ph_inv = -np.einsum("nij,nj->ni", Rh_inv, ph)       # -R^T . p
+    Rh = Rotation.from_quat(
+        qh_safe
+    ).as_matrix()  # (N, 3, 3)，无效帧这里是占位值，valid 会滤掉
+    Rh_inv = np.transpose(Rh, (0, 2, 1))  # R^T
+    ph_inv = -np.einsum("nij,nj->ni", Rh_inv, ph)  # -R^T . p
 
     R_hc = T_headset_to_cam[:3, :3]
     t_hc = T_headset_to_cam[:3, 3]
 
-    R_result = R_hc @ Rh_inv                            # (N, 3, 3)
+    R_result = R_hc @ Rh_inv  # (N, 3, 3)
     t_result = np.einsum("ij,nj->ni", R_hc, ph_inv) + t_hc
     return R_result, t_result, valid
 
 
-def compose_batch(R_a: np.ndarray, t_a: np.ndarray,
-                  R_b: np.ndarray, t_b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def compose_batch(
+    R_a: np.ndarray, t_a: np.ndarray, R_b: np.ndarray, t_b: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     """T_result = T_a . T_b，逐帧。"""
     R = R_a @ R_b
     t = np.einsum("nij,nj->ni", R_a, t_b) + t_a
@@ -173,7 +184,9 @@ def pack_pose_valid(R: np.ndarray, t: np.ndarray, valid: np.ndarray) -> np.ndarr
 # --------------------------------------------------------------------------- #
 # parquet 读写
 # --------------------------------------------------------------------------- #
-def add_fixed_size_list_column(table: pa.Table, name: str, values: np.ndarray) -> pa.Table:
+def add_fixed_size_list_column(
+    table: pa.Table, name: str, values: np.ndarray
+) -> pa.Table:
     """values: (N, 8) float32 -> fixed_size_list<float>[8] 列，追加到 table。"""
     flat = pa.array(values.reshape(-1), type=pa.float32())
     col = pa.FixedSizeListArray.from_arrays(flat, values.shape[1])
@@ -182,16 +195,24 @@ def add_fixed_size_list_column(table: pa.Table, name: str, values: np.ndarray) -
     return table.append_column(name, col)
 
 
-def process_file(path: Path,
-                 wrist_to_ctrl: dict[str, tuple[np.ndarray, np.ndarray]],
-                 T_headset_to_head: dict[str, np.ndarray],
-                 dry_run: bool) -> dict[str, int]:
+def process_file(
+    path: Path,
+    wrist_to_ctrl: dict[str, tuple[np.ndarray, np.ndarray]],
+    T_headset_to_head: dict[str, np.ndarray],
+    dry_run: bool,
+) -> dict[str, int]:
     table = pq.read_table(path)
     n = table.num_rows
 
-    head_pose = np.stack(table.column("observation.head_pose").to_numpy(zero_copy_only=False))
-    ctrl_left = np.stack(table.column("observation.controller_left").to_numpy(zero_copy_only=False))
-    ctrl_right = np.stack(table.column("observation.controller_right").to_numpy(zero_copy_only=False))
+    head_pose = np.stack(
+        table.column("observation.head_pose").to_numpy(zero_copy_only=False)
+    )
+    ctrl_left = np.stack(
+        table.column("observation.controller_left").to_numpy(zero_copy_only=False)
+    )
+    ctrl_right = np.stack(
+        table.column("observation.controller_right").to_numpy(zero_copy_only=False)
+    )
 
     counts: dict[str, int] = {}
     for wrist_side, ctrl in (("left", ctrl_left), ("right", ctrl_right)):
@@ -206,7 +227,9 @@ def process_file(path: Path,
             table = add_fixed_size_list_column(table, world_col, world_packed)
 
         for cam_side in ("left", "right"):
-            R_sc, t_sc, head_valid = batch_stage_to_cam(head_pose, T_headset_to_head[cam_side])
+            R_sc, t_sc, head_valid = batch_stage_to_cam(
+                head_pose, T_headset_to_head[cam_side]
+            )
             R_res, t_res = compose_batch(R_sc, t_sc, Rw, pw)
             valid = ctrl_valid & head_valid
 
@@ -230,7 +253,8 @@ def update_info_json(dataset_root: Path, dry_run: bool) -> None:
 
     for wrist_side in ("left", "right"):
         names = [f"observation.wrist_{wrist_side}_in_world"] + [
-            f"observation.wrist_{wrist_side}_in_head_{cam_side}" for cam_side in ("left", "right")
+            f"observation.wrist_{wrist_side}_in_head_{cam_side}"
+            for cam_side in ("left", "right")
         ]
         for name in names:
             info["features"][name] = {
@@ -249,38 +273,64 @@ def update_info_json(dataset_root: Path, dry_run: bool) -> None:
 
 # --------------------------------------------------------------------------- #
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dataset-root", type=Path, required=True,
-                    help="record_cameras.py 录的 LeRobot 数据集根目录")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--dataset-root",
+        type=Path,
+        required=True,
+        help="record_cameras.py 录的 LeRobot 数据集根目录",
+    )
     ap.add_argument("--controller-dir", type=Path, default=CALIB_DIR / "controller")
-    ap.add_argument("--pico-intrinsics", type=Path,
-                    default=CALIB_DIR / "pico_camera" / "left_intrinsics.npz")
-    ap.add_argument("--pico-to-head", type=Path,
-                    default=CALIB_DIR / "pico_to_head" / "extrinsics.npz")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="只统计每列有多少有效帧，不实际写回 parquet / info.json")
+    ap.add_argument(
+        "--pico-intrinsics",
+        type=Path,
+        default=CALIB_DIR / "pico_camera" / "left_intrinsics.npz",
+    )
+    ap.add_argument(
+        "--pico-to-head",
+        type=Path,
+        default=CALIB_DIR / "pico_to_head" / "extrinsics.npz",
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只统计每列有多少有效帧，不实际写回 parquet / info.json",
+    )
     args = ap.parse_args()
 
     if not (args.dataset_root / "meta" / "info.json").exists():
-        print(f"ERROR: {args.dataset_root} 看起来不是 LeRobot 数据集根目录（缺 meta/info.json）",
-              file=sys.stderr)
+        print(
+            f"ERROR: {args.dataset_root} 看起来不是 LeRobot 数据集根目录（缺 meta/info.json）",
+            file=sys.stderr,
+        )
         return 1
 
     print("加载标定:")
     wrist_to_ctrl = {
-        side: load_wrist_to_ctrl(args.controller_dir, side) for side in ("left", "right")
+        side: load_wrist_to_ctrl(args.controller_dir, side)
+        for side in ("left", "right")
     }
     T_headset_to_head_left, T_headset_to_head_right = load_headset_to_head_cams(
-        args.pico_intrinsics, args.pico_to_head)
-    T_headset_to_head = {"left": T_headset_to_head_left, "right": T_headset_to_head_right}
+        args.pico_intrinsics, args.pico_to_head
+    )
+    T_headset_to_head = {
+        "left": T_headset_to_head_left,
+        "right": T_headset_to_head_right,
+    }
 
     parquet_files = sorted((args.dataset_root / "data").glob("chunk-*/*.parquet"))
     if not parquet_files:
-        print(f"ERROR: {args.dataset_root / 'data'} 下没找到 parquet 文件", file=sys.stderr)
+        print(
+            f"ERROR: {args.dataset_root / 'data'} 下没找到 parquet 文件",
+            file=sys.stderr,
+        )
         return 1
 
-    print(f"\n共 {len(parquet_files)} 个 parquet 文件{'（dry-run，不会实际写回）' if args.dry_run else ''}")
+    print(
+        f"\n共 {len(parquet_files)} 个 parquet 文件{'（dry-run，不会实际写回）' if args.dry_run else ''}"
+    )
 
     totals: dict[str, int] = {}
     total_rows = 0
@@ -303,8 +353,10 @@ def main() -> int:
     if args.dry_run:
         print("\ndry-run 完成，没有修改任何文件。")
     else:
-        print("\n完成。注意 meta/stats.json 和 meta/episodes/ 里的统计信息没有更新，"
-              "包含新列的 min/max/mean 统计需要你自己用 LeRobot 的统计工具重新算。")
+        print(
+            "\n完成。注意 meta/stats.json 和 meta/episodes/ 里的统计信息没有更新，"
+            "包含新列的 min/max/mean 统计需要你自己用 LeRobot 的统计工具重新算。"
+        )
     return 0
 
 

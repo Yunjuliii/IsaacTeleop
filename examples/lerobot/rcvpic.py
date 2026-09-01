@@ -54,10 +54,7 @@ def receive_calibration(conn):
 
     matrix_values = values[13:29]
 
-    matrix = np.array(
-        matrix_values,
-        dtype=np.float32
-    ).reshape(4, 4)
+    matrix = np.array(matrix_values, dtype=np.float32).reshape(4, 4)
 
     print("\n========== CAMERA CALIBRATION ==========")
 
@@ -82,15 +79,19 @@ def receive_calibration(conn):
     print("========================================\n")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    K = np.array([[fx, 0, cx],
-                  [0, fy, cy],
-                  [0,  0,  1]])
+    K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
     out_path = OUT_DIR / "left_intrinsics.npz"
     np.savez(
         out_path,
-        width=width, height=height,
-        fx=fx, fy=fy, cx=cx, cy=cy, K=K,
-        position=np.array(pos), quaternion_xyzw=np.array(quat),
+        width=width,
+        height=height,
+        fx=fx,
+        fy=fy,
+        cx=cx,
+        cy=cy,
+        K=K,
+        position=np.array(pos),
+        quaternion_xyzw=np.array(quat),
         extrinsic_matrix=matrix,
     )
     print(f"内参已自动存到: {out_path}\n")
@@ -107,15 +108,9 @@ def receive_frame(conn):
 
     header_size = struct.calcsize(fmt)
 
-    header = recv_exact(
-        conn,
-        header_size
-    )
+    header = recv_exact(conn, header_size)
 
-    values = struct.unpack(
-        fmt,
-        header
-    )
+    values = struct.unpack(fmt, header)
 
     timestamp = values[0]
 
@@ -126,35 +121,15 @@ def receive_frame(conn):
     head_pos = values[4:7]
     head_rot = values[7:11]
 
-    image_bytes = recv_exact(
-        conn,
-        image_size
-    )
+    image_bytes = recv_exact(conn, image_size)
 
-    return (
-        timestamp,
-        width,
-        height,
-        head_pos,
-        head_rot,
-        image_bytes
-    )
+    return (timestamp, width, height, head_pos, head_rot, image_bytes)
 
 
-with socket.socket(
-    socket.AF_INET,
-    socket.SOCK_STREAM
-) as server:
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-    server.setsockopt(
-        socket.SOL_SOCKET,
-        socket.SO_REUSEADDR,
-        1
-    )
-
-    server.bind(
-        (HOST, PORT)
-    )
+    server.bind((HOST, PORT))
 
     server.listen(1)
 
@@ -168,119 +143,73 @@ with socket.socket(
     print("PICO connected:", address)
 
     with conn:
-
         frame_number = 0
 
         try:
-
             while True:
-
-                packet_type = recv_exact(
-                    conn,
-                    1
-                )[0]
+                packet_type = recv_exact(conn, 1)[0]
 
                 # --------------------------
                 # Calibration packet
                 # --------------------------
 
                 if packet_type == 1:
-
-                    receive_calibration(
-                        conn
-                    )
-
+                    receive_calibration(conn)
 
                 # --------------------------
                 # Camera frame
                 # --------------------------
 
                 elif packet_type == 2:
-
-                    (
-                        timestamp,
-                        width,
-                        height,
-                        head_pos,
-                        head_rot,
-                        image_bytes
-                    ) = receive_frame(conn)
+                    (timestamp, width, height, head_pos, head_rot, image_bytes) = (
+                        receive_frame(conn)
+                    )
 
                     frame_number += 1
 
-                    expected_size = (
-                        width
-                        * height
-                        * 4
-                    )
+                    expected_size = width * height * 4
 
                     if len(image_bytes) != expected_size:
-
                         print(
                             "Unexpected image size:",
                             len(image_bytes),
                             "expected:",
-                            expected_size
+                            expected_size,
                         )
 
                         continue
 
-                    image = np.frombuffer(
-                        image_bytes,
-                        dtype=np.uint8
-                    )
+                    image = np.frombuffer(image_bytes, dtype=np.uint8)
 
-                    image = image.reshape(
-                        height,
-                        width,
-                        4
-                    )
+                    image = image.reshape(height, width, 4)
 
                     # 第一版先按 RGBA -> BGR 尝试
-                    frame = cv2.cvtColor(
-                        image,
-                        cv2.COLOR_RGBA2BGR
-                    )
+                    frame = cv2.cvtColor(image, cv2.COLOR_RGBA2BGR)
 
                     if frame_number % 30 == 0:
-
                         print(
                             "frame:",
                             frame_number,
                             "timestamp:",
                             timestamp,
                             "head pos:",
-                            head_pos
+                            head_pos,
                         )
 
                     # 只截取第一帧存盘，不弹窗。PNG 无损，跟标定用途匹配。
                     OUT_DIR.mkdir(parents=True, exist_ok=True)
                     out_path = OUT_DIR / "pico_frame.png"
 
-                    cv2.imwrite(
-                        str(out_path),
-                        frame
-                    )
+                    cv2.imwrite(str(out_path), frame)
 
                     print("已保存一帧到:", out_path)
 
                     break
 
                 else:
-
-                    print(
-                        "Unknown packet type:",
-                        packet_type
-                    )
+                    print("Unknown packet type:", packet_type)
 
                     break
 
-        except (
-            ConnectionError,
-            BrokenPipeError
-        ) as e:
-
-            print(
-                "Connection closed:",
-                e
-            )
+        except (ConnectionError, BrokenPipeError) as e:
+            print("Connection closed:", e)

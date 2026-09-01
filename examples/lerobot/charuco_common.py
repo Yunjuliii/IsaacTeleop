@@ -37,9 +37,12 @@ import cv2
 import numpy as np
 
 ARUCO_DICTS = {
-    "4X4_50": cv2.aruco.DICT_4X4_50, "4X4_100": cv2.aruco.DICT_4X4_100,
-    "5X5_50": cv2.aruco.DICT_5X5_50, "5X5_100": cv2.aruco.DICT_5X5_100,
-    "6X6_50": cv2.aruco.DICT_6X6_50, "6X6_100": cv2.aruco.DICT_6X6_100,
+    "4X4_50": cv2.aruco.DICT_4X4_50,
+    "4X4_100": cv2.aruco.DICT_4X4_100,
+    "5X5_50": cv2.aruco.DICT_5X5_50,
+    "5X5_100": cv2.aruco.DICT_5X5_100,
+    "6X6_50": cv2.aruco.DICT_6X6_50,
+    "6X6_100": cv2.aruco.DICT_6X6_100,
     "6X6_250": cv2.aruco.DICT_6X6_250,
 }
 
@@ -57,22 +60,57 @@ def add_charuco_args(ap: argparse.ArgumentParser) -> None:
     printed at 3.5 cm/square -- adjust to whatever you actually print, and keep
     every script's flags in sync (they must describe the same physical board).
     """
-    ap.add_argument("--dict", default="5X5_100", choices=sorted(ARUCO_DICTS),
-                    help="ArUco dictionary the board's markers are drawn from")
-    ap.add_argument("--squares-x", type=int, default=7,
-                    help="chessboard squares across (default: 7)")
-    ap.add_argument("--squares-y", type=int, default=5,
-                    help="chessboard squares down (default: 5)")
-    ap.add_argument("--square-size", type=float, default=0.035,
-                    help="chessboard square edge length, metres, AS PRINTED "
-                         "(default: 0.035 = 35 mm)")
-    ap.add_argument("--marker-size", type=float, default=0.026,
-                    help="ArUco marker edge length, metres, AS PRINTED. Must be "
-                         "smaller than --square-size (default: 0.026 = 26 mm, "
-                         "OpenCV's usual ~0.75x ratio)")
+    ap.add_argument(
+        "--dict",
+        default="5X5_100",
+        choices=sorted(ARUCO_DICTS),
+        help="ArUco dictionary the board's markers are drawn from",
+    )
+    ap.add_argument(
+        "--squares-x",
+        type=int,
+        default=7,
+        help="chessboard squares across (default: 7)",
+    )
+    ap.add_argument(
+        "--squares-y", type=int, default=5, help="chessboard squares down (default: 5)"
+    )
+    ap.add_argument(
+        "--square-size",
+        type=float,
+        default=0.035,
+        help="chessboard square edge length, metres, AS PRINTED "
+        "(default: 0.035 = 35 mm)",
+    )
+    ap.add_argument(
+        "--marker-size",
+        type=float,
+        default=0.026,
+        help="ArUco marker edge length, metres, AS PRINTED. Must be "
+        "smaller than --square-size (default: 0.026 = 26 mm, "
+        "OpenCV's usual ~0.75x ratio)",
+    )
+    ap.add_argument(
+        "--legacy-pattern",
+        dest="legacy_pattern",
+        action="store_true",
+        default=True,
+        help="Use the pre-4.6 ChArUco marker layout (default: on). "
+        "OpenCV 4.6 changed how markers are placed on non-square "
+        "boards; third-party generators (calib.io in particular) "
+        "still print the old layout. Same squares/marker-size/dict "
+        "still detects with the wrong setting -- corners just map "
+        "to the wrong 3D points, so solvePnP silently converges to "
+        "a wrong-but-plausible pose. Board printed with "
+        "generate_charuco_board.py (OpenCV >=4.6 layout) needs "
+        "--no-legacy-pattern.",
+    )
+    ap.add_argument("--no-legacy-pattern", dest="legacy_pattern", action="store_false")
 
 
-def build_board(args: argparse.Namespace) -> tuple["cv2.aruco.CharucoBoard", "cv2.aruco.Dictionary"]:
+def build_board(
+    args: argparse.Namespace,
+) -> tuple["cv2.aruco.CharucoBoard", "cv2.aruco.Dictionary"]:
     if args.marker_size >= args.square_size:
         raise ValueError(
             f"--marker-size ({args.marker_size}) must be smaller than "
@@ -81,22 +119,30 @@ def build_board(args: argparse.Namespace) -> tuple["cv2.aruco.CharucoBoard", "cv
         )
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICTS[args.dict])
     board = cv2.aruco.CharucoBoard(
-        (args.squares_x, args.squares_y), args.square_size, args.marker_size, aruco_dict)
+        (args.squares_x, args.squares_y), args.square_size, args.marker_size, aruco_dict
+    )
+    board.setLegacyPattern(args.legacy_pattern)
     return board, aruco_dict
 
 
-def detect_charuco(gray: np.ndarray, board: "cv2.aruco.CharucoBoard"
-                   ) -> tuple[np.ndarray | None, np.ndarray | None]:
+def detect_charuco(
+    gray: np.ndarray, board: "cv2.aruco.CharucoBoard"
+) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Returns (charuco_corners, charuco_ids); either is None if nothing found."""
     detector = cv2.aruco.CharucoDetector(board)
-    charuco_corners, charuco_ids, _marker_corners, _marker_ids = detector.detectBoard(gray)
+    charuco_corners, charuco_ids, _marker_corners, _marker_ids = detector.detectBoard(
+        gray
+    )
     return charuco_corners, charuco_ids
 
 
-def detect_charuco_pose(gray: np.ndarray, board: "cv2.aruco.CharucoBoard",
-                        K: np.ndarray, D: np.ndarray,
-                        min_corners: int = MIN_CHARUCO_CORNERS
-                        ) -> tuple[np.ndarray | None, np.ndarray | None, int]:
+def detect_charuco_pose(
+    gray: np.ndarray,
+    board: "cv2.aruco.CharucoBoard",
+    K: np.ndarray,
+    D: np.ndarray,
+    min_corners: int = MIN_CHARUCO_CORNERS,
+) -> tuple[np.ndarray | None, np.ndarray | None, int]:
     """Detects the board and solves its pose in one shot.
 
     Returns (R 3x3, t 3,, n_corners). R/t are None when fewer than

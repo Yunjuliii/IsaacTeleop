@@ -86,18 +86,22 @@ class StereoBuffer(Node):
         self._lock = threading.Lock()
         self._latest: dict[str, np.ndarray] = {}
         self._counts = {"left": 0, "right": 0}
-        qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
-                         history=HistoryPolicy.KEEP_LAST, depth=1)
-        self.create_subscription(Image, left_topic,
-                                 lambda m: self._cb(m, "left"), qos)
-        self.create_subscription(Image, right_topic,
-                                 lambda m: self._cb(m, "right"), qos)
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self.create_subscription(Image, left_topic, lambda m: self._cb(m, "left"), qos)
+        self.create_subscription(
+            Image, right_topic, lambda m: self._cb(m, "right"), qos
+        )
         self.get_logger().info(f"Subscribed: left={left_topic} right={right_topic}")
 
     def _cb(self, msg: Image, name: str) -> None:
         if msg.encoding != "rgb8":
             self.get_logger().warn(
-                f"{name}: expected rgb8, got {msg.encoding}", once=True)
+                f"{name}: expected rgb8, got {msg.encoding}", once=True
+            )
             return
         buf = np.frombuffer(msg.data, dtype=np.uint8)
         row = msg.width * 3
@@ -114,6 +118,7 @@ class StereoBuffer(Node):
 
     def wait_for_both(self, timeout: float = 30.0) -> bool:
         import time
+
         deadline = time.time() + timeout
         while time.time() < deadline:
             if "left" in self.snapshot() and "right" in self.snapshot():
@@ -127,24 +132,34 @@ def check_corners(img_rgb: np.ndarray, pattern: tuple[int, int]) -> bool:
     """跟标定代码用同一个检测函数，只用于当场反馈，不影响后续真正标定的检测。"""
     gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
     found, _ = cv2.findChessboardCorners(
-        gray, pattern,
-        cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_FAST_CHECK + cv2.CALIB_CB_NORMALIZE_IMAGE,
+        gray,
+        pattern,
+        cv2.CALIB_CB_ADAPTIVE_THRESH
+        + cv2.CALIB_CB_FAST_CHECK
+        + cv2.CALIB_CB_NORMALIZE_IMAGE,
     )
     return found
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--left-topic", default="/fisheye/left/image_raw")
     ap.add_argument("--right-topic", default="/fisheye/right/image_raw")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    ap.add_argument("--rows", type=int, default=10,
-                    help="棋盘格行方向格子数（不是内角点数）")
-    ap.add_argument("--cols", type=int, default=7,
-                    help="棋盘格列方向格子数（不是内角点数）")
-    ap.add_argument("--square-size", type=float, default=0.025,
-                    help="格子实测边长，单位米，仅用于此处打印提示，不写入图像")
+    ap.add_argument(
+        "--rows", type=int, default=10, help="棋盘格行方向格子数（不是内角点数）"
+    )
+    ap.add_argument(
+        "--cols", type=int, default=7, help="棋盘格列方向格子数（不是内角点数）"
+    )
+    ap.add_argument(
+        "--square-size",
+        type=float,
+        default=0.025,
+        help="格子实测边长，单位米，仅用于此处打印提示，不写入图像",
+    )
     args = ap.parse_args()
 
     # 内角点数 = 格子数 - 1
@@ -186,7 +201,9 @@ def main() -> int:
     snap = node.snapshot()
     for name, img in sorted(snap.items()):
         print(f"  {name}: {img.shape[1]}x{img.shape[0]}")
-    print(f"棋盘格内角点: {pattern[0]} x {pattern[1]}  (格子边长 {args.square_size*1000:.1f}mm)")
+    print(
+        f"棋盘格内角点: {pattern[0]} x {pattern[1]}  (格子边长 {args.square_size * 1000:.1f}mm)"
+    )
     print(f"输出目录: {args.out}")
     print("\n's' = 截取一对   'q' = 结束\n")
 
@@ -194,7 +211,9 @@ def main() -> int:
     saved_pairs = 0
     try:
         while True:
-            print(f"[{saved_pairs} 对已存] 按 's' 截取，'q' 退出...", end="\r", flush=True)
+            print(
+                f"[{saved_pairs} 对已存] 按 's' 截取，'q' 退出...", end="\r", flush=True
+            )
             ch = getch()
             if ch == "q":
                 break
@@ -211,10 +230,12 @@ def main() -> int:
             right_ok = check_corners(right_img, pattern)
 
             fname = f"frame_{frame_i:04d}.png"
-            cv2.imwrite(str(left_dir / fname),
-                       cv2.cvtColor(left_img, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(right_dir / fname),
-                       cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(
+                str(left_dir / fname), cv2.cvtColor(left_img, cv2.COLOR_RGB2BGR)
+            )
+            cv2.imwrite(
+                str(right_dir / fname), cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR)
+            )
 
             status = f"left {'FOUND' if left_ok else 'NOT FOUND'} / right {'FOUND' if right_ok else 'NOT FOUND'}"
             print(f"\n  已存 {fname}   {status}")

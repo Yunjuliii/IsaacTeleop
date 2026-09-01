@@ -74,9 +74,9 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 
 DEFAULT_CAMERAS = {
-    "head_left":   "/head/left/image_raw",
-    "head_right":  "/head/right/image_raw",
-    "wrist_left":  "/wrist/left/image_raw",
+    "head_left": "/head/left/image_raw",
+    "head_right": "/head/right/image_raw",
+    "wrist_left": "/wrist/left/image_raw",
     "wrist_right": "/wrist/right/image_raw",
 }
 
@@ -120,15 +120,34 @@ NVENC_MIN_GOP = 4
 # LeRobot EgoWorld convention: observation.hand_{left|right}, flat float32[175].
 HAND_JOINT_NAMES = [
     "wrist",
-    "thumb_metacarpal",  "thumb_proximal",      "thumb_distal",        "thumb_tip",
-    "index_metacarpal",  "index_proximal",       "index_intermediate",  "index_distal",  "index_tip",
-    "middle_metacarpal", "middle_proximal",      "middle_intermediate", "middle_distal", "middle_tip",
-    "ring_metacarpal",   "ring_proximal",        "ring_intermediate",   "ring_distal",   "ring_tip",
-    "little_metacarpal", "little_proximal",      "little_intermediate", "little_distal", "little_tip",
+    "thumb_metacarpal",
+    "thumb_proximal",
+    "thumb_distal",
+    "thumb_tip",
+    "index_metacarpal",
+    "index_proximal",
+    "index_intermediate",
+    "index_distal",
+    "index_tip",
+    "middle_metacarpal",
+    "middle_proximal",
+    "middle_intermediate",
+    "middle_distal",
+    "middle_tip",
+    "ring_metacarpal",
+    "ring_proximal",
+    "ring_intermediate",
+    "ring_distal",
+    "ring_tip",
+    "little_metacarpal",
+    "little_proximal",
+    "little_intermediate",
+    "little_distal",
+    "little_tip",
 ]
 # 7 values per joint: position (x,y,z in metres) + orientation quaternion (qx,qy,qz,qw).
 # One name per joint (not per scalar) — the 7 floats for each joint share the joint label.
-HAND_POSE_DIM = 7                              # x, y, z, qx, qy, qz, qw
+HAND_POSE_DIM = 7  # x, y, z, qx, qy, qz, qw
 
 # --------------------------------------------------------------------------- #
 # Hand reference frame
@@ -150,16 +169,24 @@ HAND_POSE_DIM = 7                              # x, y, z, qx, qy, qz, qw
 # stored as 7 constant floats that invite being mistaken for a real pose.
 HAND_FRAME_STAGE = "stage"
 HAND_FRAME_LOCAL = "local"
-HAND_FRAMES      = (HAND_FRAME_STAGE, HAND_FRAME_LOCAL)
+HAND_FRAMES = (HAND_FRAME_STAGE, HAND_FRAME_LOCAL)
 
 # Default aim-to-wrist transform, mirroring kLeftHandOffset / kRightHandOffset in
 # manus_hand_tracking_plugin.cpp. Used only when config.json overrides it; leaving
 # it unset passes the plugin's own composition through untouched, which is exact.
+# 2026-08-25: mirrors the rig-calibrated constants (inv(T_grip->aim) . T_wrist->ctrl
+# . C0 -- see the comment above kLeftHandOffset in the cpp). The stage-frame WRIST
+# joint now lands on the calibrated anatomical wrist, not the vendor's nominal
+# held-controller guess.
 DEFAULT_AIM_TO_WRIST = {
-    "left":  {"position": [-0.1, 0.02, -0.02],
-              "quaternion": [-0.70710678, -0.5, 0.0, 0.5]},   # qx, qy, qz, qw
-    "right": {"position": [0.1, 0.02, -0.02],
-              "quaternion": [-0.70710678, 0.5, 0.0, 0.5]},
+    "left": {
+        "position": [0.044895, -0.123515, 0.054711],
+        "quaternion": [0.35957026, 0.05137509, 0.43123836, 0.82589546],
+    },  # qx, qy, qz, qw
+    "right": {
+        "position": [-0.043748, -0.124802, 0.052615],
+        "quaternion": [0.33336273, -0.06644838, -0.48965076, 0.80292966],
+    },
 }
 
 
@@ -220,8 +247,9 @@ def to_stage(hand_local: np.ndarray, aim: np.ndarray, offset: np.ndarray) -> np.
     joints = hand_local.reshape(-1, HAND_POSE_DIM)
     return np.concatenate([root, *(_compose(root, j) for j in joints)])
 
+
 # Head pose: position (x,y,z) + orientation quaternion (qx,qy,qz,qw), all in STAGE space.
-HEAD_POSE_DIM   = 7
+HEAD_POSE_DIM = 7
 HEAD_POSE_NAMES = ["x", "y", "z", "qx", "qy", "qz", "qw"]
 
 # Controller grip pose, STAGE space: position(3) + quaternion(4) + validity(1).
@@ -235,9 +263,16 @@ HEAD_POSE_NAMES = ["x", "y", "z", "qx", "qy", "qz", "qw"]
 # also exactly the condition that makes the plugin's own fallback bail out
 # (get_controller_wrist_pose returns false on !aim_valid), so a zero here means
 # that frame's hand joints are stale, not merely that the controller is missing.
-CONTROLLER_POSE_DIM   = 8
+CONTROLLER_POSE_DIM = 8
 CONTROLLER_POSE_NAMES = [
-    "grip_x", "grip_y", "grip_z", "grip_qx", "grip_qy", "grip_qz", "grip_qw", "grip_valid",
+    "grip_x",
+    "grip_y",
+    "grip_z",
+    "grip_qx",
+    "grip_qy",
+    "grip_qz",
+    "grip_qw",
+    "grip_valid",
 ]
 
 # Plugin ROOT, not the plugin's own directory: PluginManager::discover_plugins()
@@ -278,18 +313,29 @@ class ManusHandBuffer:
     THUMB_METACARPAL → LITTLE_TIP under LOCAL.
     """
 
-    def __init__(self, plugin_dir: Path = MANUS_PLUGIN_DIR,
-                 hand_frame: str = HAND_FRAME_STAGE,
-                 aim_to_wrist: dict | None = None,
-                 collect_hands: bool = True):
+    def __init__(
+        self,
+        plugin_dir: Path = MANUS_PLUGIN_DIR,
+        hand_frame: str = HAND_FRAME_STAGE,
+        aim_to_wrist: dict | None = None,
+        collect_hands: bool = True,
+    ):
         """collect_hands=False keeps head pose + controller capture (still needs a
         connected CloudXR client) but does not load the Manus plugin at all, so the
         glove subprocess never starts -- for when the gloves are off/charging but
         the headset and controllers are still tracked. observation.hand_* is not
         produced in this mode; see the --no-manus caller in main()."""
-        from isaacteleop.retargeting_engine.deviceio_source_nodes import HandsSource, HeadSource, ControllersSource
+        from isaacteleop.retargeting_engine.deviceio_source_nodes import (
+            HandsSource,
+            HeadSource,
+            ControllersSource,
+        )
         from isaacteleop.retargeting_engine.interface import OutputCombiner
-        from isaacteleop.retargeting_engine.tensor_types import HandInputIndex, HeadPoseIndex, ControllerInputIndex
+        from isaacteleop.retargeting_engine.tensor_types import (
+            HandInputIndex,
+            HeadPoseIndex,
+            ControllerInputIndex,
+        )
         from isaacteleop.teleop_session_manager import (
             PluginConfig,
             TeleopSession,
@@ -310,22 +356,22 @@ class ManusHandBuffer:
                     f"Manus process never starts and observation.hand_* records all zeros."
                 )
 
-        self._TeleopSession       = TeleopSession
-        self._HandInputIndex      = HandInputIndex
-        self._HeadPoseIndex       = HeadPoseIndex
+        self._TeleopSession = TeleopSession
+        self._HandInputIndex = HandInputIndex
+        self._HeadPoseIndex = HeadPoseIndex
         self._ControllerInputIndex = ControllerInputIndex
 
-        head        = HeadSource(name="head")
+        head = HeadSource(name="head")
         controllers = ControllersSource(name="controllers")
         outputs = {
-            "head":             head.output("head"),
-            "controller_left":  controllers.output(ControllersSource.LEFT),
+            "head": head.output("head"),
+            "controller_left": controllers.output(ControllersSource.LEFT),
             "controller_right": controllers.output(ControllersSource.RIGHT),
         }
         plugins = []
         if collect_hands:
             hands = HandsSource(name="hands")
-            outputs["hand_left"]  = hands.output(HandsSource.LEFT)
+            outputs["hand_left"] = hands.output(HandsSource.LEFT)
             outputs["hand_right"] = hands.output(HandsSource.RIGHT)
             plugins.append(
                 PluginConfig(
@@ -341,8 +387,10 @@ class ManusHandBuffer:
             plugins=plugins,
         )
         if hand_frame not in HAND_FRAMES:
-            raise ValueError(f"hand_frame must be one of {HAND_FRAMES}, got {hand_frame!r}")
-        self._hand_frame  = hand_frame
+            raise ValueError(
+                f"hand_frame must be one of {HAND_FRAMES}, got {hand_frame!r}"
+            )
+        self._hand_frame = hand_frame
         self._feature_dim = hand_feature_dim(hand_frame)
         # None means "leave the plugin's own composition alone". Only a config
         # override populates this, and only STAGE can use it -- re-anchoring is
@@ -350,18 +398,19 @@ class ManusHandBuffer:
         self._aim_to_wrist = None
         if aim_to_wrist is not None and hand_frame == HAND_FRAME_STAGE:
             self._aim_to_wrist = {
-                side: np.asarray(list(spec["position"]) + list(spec["quaternion"]),
-                                 dtype=np.float32)
+                side: np.asarray(
+                    list(spec["position"]) + list(spec["quaternion"]), dtype=np.float32
+                )
                 for side, spec in aim_to_wrist.items()
             }
 
-        self._config     = config
-        self._session    = TeleopSession(config)
-        self._lock       = threading.Lock()
-        self._left       = np.zeros(self._feature_dim, dtype=np.float32)
-        self._right      = np.zeros(self._feature_dim, dtype=np.float32)
-        self._head_pose        = np.zeros(HEAD_POSE_DIM,        dtype=np.float32)
-        self._controller_left  = np.zeros(CONTROLLER_POSE_DIM, dtype=np.float32)
+        self._config = config
+        self._session = TeleopSession(config)
+        self._lock = threading.Lock()
+        self._left = np.zeros(self._feature_dim, dtype=np.float32)
+        self._right = np.zeros(self._feature_dim, dtype=np.float32)
+        self._head_pose = np.zeros(HEAD_POSE_DIM, dtype=np.float32)
+        self._controller_left = np.zeros(CONTROLLER_POSE_DIM, dtype=np.float32)
         self._controller_right = np.zeros(CONTROLLER_POSE_DIM, dtype=np.float32)
         # Timestamped history, so a row can be built from the sample that is
         # contemporary with its camera frame rather than the newest one. Sized
@@ -369,9 +418,10 @@ class ManusHandBuffer:
         # hundred small tuples, and running short is worse than the memory --
         # a lookup that falls off the end of the deque discards the whole row.
         self._history: collections.deque = collections.deque(
-            maxlen=int(HAND_POLL_HZ * HAND_HISTORY_SECONDS))
-        self._ready      = threading.Event()
-        self._stop       = threading.Event()
+            maxlen=int(HAND_POLL_HZ * HAND_HISTORY_SECONDS)
+        )
+        self._ready = threading.Event()
+        self._stop = threading.Event()
         self._error: BaseException | None = None
         self._thread: threading.Thread | None = None
 
@@ -390,8 +440,9 @@ class ManusHandBuffer:
                 time.sleep(2.0)
                 # TeleopSession is not reusable after a failed __enter__; recreate it.
                 self._session = self._TeleopSession(self._config)
-        self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name="manus-hand-poll")
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="manus-hand-poll"
+        )
         self._thread.start()
         return self
 
@@ -402,8 +453,10 @@ class ManusHandBuffer:
             if self._thread.is_alive():
                 # Wedged inside a native tracker call. Tearing the session down now
                 # would destroy the hand trackers out from under it, so leak instead.
-                print("[Manus] poll thread did not exit; leaking session.",
-                      file=sys.stderr)
+                print(
+                    "[Manus] poll thread did not exit; leaking session.",
+                    file=sys.stderr,
+                )
                 return False
         try:
             self._session.__exit__(*args)
@@ -414,8 +467,10 @@ class ManusHandBuffer:
             # it so that dataset.finalize() still runs after this context exits.
             msg = str(exc)
             if "signal 2" in msg or "Interrupt" in msg:
-                print(f"[Manus] plugin exited on Ctrl+C (signal 2), ignoring.",
-                      file=sys.stderr)
+                print(
+                    "[Manus] plugin exited on Ctrl+C (signal 2), ignoring.",
+                    file=sys.stderr,
+                )
             else:
                 raise
 
@@ -430,9 +485,9 @@ class ManusHandBuffer:
             return np.zeros(self._feature_dim, dtype=np.float32)
         HI = self._HandInputIndex
         # shape (26, 3) and (26, 4) — index 0 is PALM, 1-25 are the joints we want.
-        positions    = np.asarray(hand[HI.JOINT_POSITIONS],    dtype=np.float32)
+        positions = np.asarray(hand[HI.JOINT_POSITIONS], dtype=np.float32)
         orientations = np.asarray(hand[HI.JOINT_ORIENTATIONS], dtype=np.float32)
-        pos = positions[1:26]     # (25, 3)  xyz metres
+        pos = positions[1:26]  # (25, 3)  xyz metres
         ori = orientations[1:26]  # (25, 4)  quaternion xyzw
         # Interleave as [x,y,z, qx,qy,qz,qw] × 25 = 175 floats
         stage = np.concatenate([pos, ori], axis=1).reshape(-1)
@@ -446,8 +501,9 @@ class ManusHandBuffer:
         # root under a different offset would be neither frame -- zero instead.
         if aim[7] < 0.5:
             return np.zeros(self._feature_dim, dtype=np.float32)
-        return to_stage(to_wrist_local(stage), aim[0:7],
-                        self._aim_to_wrist[side]).astype(np.float32)
+        return to_stage(
+            to_wrist_local(stage), aim[0:7], self._aim_to_wrist[side]
+        ).astype(np.float32)
 
     def _extract_head(self, head) -> np.ndarray:
         """Pack HeadPose into a flat float32 array of shape (7,): [x,y,z, qx,qy,qz,qw]."""
@@ -456,7 +512,7 @@ class ManusHandBuffer:
         HI = self._HeadPoseIndex
         if not bool(head[HI.IS_VALID]):
             return np.zeros(HEAD_POSE_DIM, dtype=np.float32)
-        pos = np.asarray(head[HI.POSITION],    dtype=np.float32)  # (3,) xyz metres
+        pos = np.asarray(head[HI.POSITION], dtype=np.float32)  # (3,) xyz metres
         ori = np.asarray(head[HI.ORIENTATION], dtype=np.float32)  # (4,) qx qy qz qw
         return np.concatenate([pos, ori])
 
@@ -473,9 +529,13 @@ class ManusHandBuffer:
             return out
         CI = self._ControllerInputIndex
         if bool(ctrl[CI.GRIP_IS_VALID]):
-            out[0:3] = np.asarray(ctrl[CI.GRIP_POSITION],    dtype=np.float32)  # xyz metres
-            out[3:7] = np.asarray(ctrl[CI.GRIP_ORIENTATION], dtype=np.float32)  # qx qy qz qw
-            out[7]   = 1.0
+            out[0:3] = np.asarray(
+                ctrl[CI.GRIP_POSITION], dtype=np.float32
+            )  # xyz metres
+            out[3:7] = np.asarray(
+                ctrl[CI.GRIP_ORIENTATION], dtype=np.float32
+            )  # qx qy qz qw
+            out[7] = 1.0
         return out
 
     def _extract_aim(self, ctrl) -> np.ndarray:
@@ -490,9 +550,9 @@ class ManusHandBuffer:
             return out
         CI = self._ControllerInputIndex
         if bool(ctrl[CI.AIM_IS_VALID]):
-            out[0:3] = np.asarray(ctrl[CI.AIM_POSITION],    dtype=np.float32)
+            out[0:3] = np.asarray(ctrl[CI.AIM_POSITION], dtype=np.float32)
             out[3:7] = np.asarray(ctrl[CI.AIM_ORIENTATION], dtype=np.float32)
-            out[7]   = 1.0
+            out[7] = 1.0
         return out
 
     def _run(self) -> None:
@@ -506,7 +566,7 @@ class ManusHandBuffer:
         # encoder feed: measured here, unthrottled collapsed the record loop from
         # 29 Hz to 7.5 Hz and silently dropped ~9% of video frames on top; at
         # 60 Hz all four cameras came back lossless.
-        period   = 1.0 / HAND_POLL_HZ
+        period = 1.0 / HAND_POLL_HZ
         deadline = time.monotonic() + period
 
         while not self._stop.is_set():
@@ -516,35 +576,36 @@ class ManusHandBuffer:
                 # hand re-anchoring still needs the aim pose (the plugin builds
                 # every joint as aim * offset * local), so extract aim separately
                 # for that internal path only.
-                ctrl_left       = self._extract_controller(result["controller_left"])
-                ctrl_right      = self._extract_controller(result["controller_right"])
+                ctrl_left = self._extract_controller(result["controller_left"])
+                ctrl_right = self._extract_controller(result["controller_right"])
                 if self._collect_hands:
                     hand_l, hand_r = result["hand_left"], result["hand_right"]
                     if self._aim_to_wrist is not None:
-                        aim_left  = self._extract_aim(result["controller_left"])
+                        aim_left = self._extract_aim(result["controller_left"])
                         aim_right = self._extract_aim(result["controller_right"])
                     else:
                         aim_left, aim_right = ctrl_left, ctrl_right
-                    left  = self._extract_hand(hand_l, "left",  aim_left)
+                    left = self._extract_hand(hand_l, "left", aim_left)
                     right = self._extract_hand(hand_r, "right", aim_right)
                 else:
                     # No HandsSource in the pipeline at all (see __init__); stay zero.
                     hand_l = hand_r = None
                     left, right = self._left, self._right
-                head            = self._extract_head(result["head"])
+                head = self._extract_head(result["head"])
                 # time.time(), not the monotonic clock this loop paces itself
                 # with: the lookup key has to be the clock ROS message headers
                 # use, and rclpy's default is system time. Pacing stays on
                 # monotonic below, where only elapsed time matters.
                 sample_t = time.time()
                 with self._lock:
-                    self._left             = left
-                    self._right            = right
-                    self._head_pose        = head
-                    self._controller_left  = ctrl_left
+                    self._left = left
+                    self._right = right
+                    self._head_pose = head
+                    self._controller_left = ctrl_left
                     self._controller_right = ctrl_right
                     self._history.append(
-                        (sample_t, left, right, head, ctrl_left, ctrl_right))
+                        (sample_t, left, right, head, ctrl_left, ctrl_right)
+                    )
                 if self._collect_hands:
                     # Gate on real hand data, not on step() merely returning. Setting
                     # this unconditionally made "Manus glove ready." print even when
@@ -580,7 +641,9 @@ class ManusHandBuffer:
                 deadline = now + period  # fell behind; resync rather than burst
 
     # -- public ---------------------------------------------------------
-    def latest(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def latest(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Return (left, right, head_pose, ctrl_left, ctrl_right) copies.
 
         left, right:  float32 of shape (175,) — 25 hand joints × 7 values each.
@@ -734,17 +797,22 @@ class CameraBuffer(Node):
         self._queues: dict[str, FrameQueue] = {
             n: FrameQueue(FRAME_QUEUE_DEPTH) for n in cameras
         }
-        qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
-                         history=HistoryPolicy.KEEP_LAST, depth=1)
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
         for name, topic in cameras.items():
-            self.create_subscription(Image, topic,
-                                     lambda m, n=name: self._cb(m, n), qos)
+            self.create_subscription(
+                Image, topic, lambda m, n=name: self._cb(m, n), qos
+            )
         self.get_logger().info(f"Subscribed to {len(cameras)} camera topics")
 
     def _cb(self, msg: Image, name: str) -> None:
         if msg.encoding != "rgb8":
             self.get_logger().warn(
-                f"{name}: expected rgb8, got {msg.encoding}", once=True)
+                f"{name}: expected rgb8, got {msg.encoding}", once=True
+            )
             return
         buf = np.frombuffer(msg.data, dtype=np.uint8)
         row = msg.width * 3
@@ -857,8 +925,11 @@ def record_episode(
     # the history covers it would drop its opening rows one by one.
     if hand_buf is not None:
         deadline = time.monotonic() + 5.0
-        while (hand_buf.history_span() < lag_s + 0.1
-               and time.monotonic() < deadline and not stop_evt.is_set()):
+        while (
+            hand_buf.history_span() < lag_s + 0.1
+            and time.monotonic() < deadline
+            and not stop_evt.is_set()
+        ):
             time.sleep(0.02)
 
     while not stop_evt.is_set():
@@ -886,10 +957,10 @@ def record_episode(
                 continue
             t_hand, left, right, head_pose, ctrl_left, ctrl_right = sample
             if collect_hands:
-                frame_data["observation.hand_left"]  = left
+                frame_data["observation.hand_left"] = left
                 frame_data["observation.hand_right"] = right
-            frame_data["observation.head_pose"]        = head_pose
-            frame_data["observation.controller_left"]  = ctrl_left
+            frame_data["observation.head_pose"] = head_pose
+            frame_data["observation.controller_left"] = ctrl_left
             frame_data["observation.controller_right"] = ctrl_right
 
         dataset.add_frame(frame_data)
@@ -898,6 +969,41 @@ def record_episode(
     drops = sum(q.dropped for q in buf._queues.values()) - drops_before
     skips = sum(q.skipped for q in buf._queues.values()) - skips_before
     return frame_i, drops, skips, unmatched
+
+
+def find_all_zero_rows(
+    dataset: LeRobotDataset, collect_hands: bool
+) -> dict[str, list[int]]:
+    """Scan the just-recorded episode's still-buffered frames for rows that are
+    a literal all-zero vector in head_pose / controller_left / controller_right
+    / hand_left / hand_right.
+
+    This is not the same thing as CONTROLLER_POSE_NAMES' valid=0 convention: a
+    single dropped controller tick writing one zeroed-out row is normal and
+    already handled downstream (e.g. add_wrist_pose.py filters on valid). What
+    this catches is a device that produced *nothing* for the whole row --
+    e.g. the headset/controller/glove was never connected or lost tracking
+    entirely -- which no per-frame valid flag protects against for head_pose
+    (it has no valid column of its own) and which is worth failing loudly on
+    rather than silently saving an episode full of zeros.
+    """
+    buf = dataset.writer.episode_buffer
+    keys = [
+        "observation.head_pose",
+        "observation.controller_left",
+        "observation.controller_right",
+    ]
+    if collect_hands:
+        keys += ["observation.hand_left", "observation.hand_right"]
+    bad: dict[str, list[int]] = {}
+    for key in keys:
+        rows = buf.get(key)
+        if not rows:
+            continue
+        zero_idx = [i for i, row in enumerate(rows) if not np.any(row)]
+        if zero_idx:
+            bad[key] = zero_idx
+    return bad
 
 
 # --------------------------------------------------------------------------- #
@@ -913,49 +1019,99 @@ def getch() -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--config", type=Path,
-                    default=Path(__file__).parent / "config.json",
-                    help="JSON config file (default: config.json next to this script)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).parent / "config.json",
+        help="JSON config file (default: config.json next to this script)",
+    )
     ap.add_argument("--root", type=Path, default=None)
     ap.add_argument("--task", default=None)
     ap.add_argument("--fps", type=int, default=None)
     ap.add_argument("--state-dim", type=int, default=None)
     ap.add_argument("--action-dim", type=int, default=None)
     ap.add_argument("--robot-type", default=None)
-    ap.add_argument("--encoder", default=None,
-                    help="ffmpeg encoder (default: h264_nvenc; 'h264' is software "
-                         "libx264 and cannot keep up with four cameras)")
-    ap.add_argument("--cameras", nargs="*", default=None,
-                    help="name=topic pairs; defaults to the four head/wrist cameras")
-    ap.add_argument("--no-hand", action="store_true",
-                    help="skip glove + head pose + controller capture entirely "
-                         "(e.g. when no CloudXR client is connected at all)")
-    ap.add_argument("--no-manus", action="store_true",
-                    help="keep head pose + controller capture but skip just the Manus "
-                         "glove (e.g. gloves are off/charging but headset+controllers "
-                         "are still on); implied by --no-hand")
-    ap.add_argument("--camera-lag-frames", type=float, default=None,
-                    help="how many camera frames the cameras lag every other sensor; "
-                         "the hand and controller columns are taken that far back so "
-                         f"they match the image (default: {DEFAULT_CAMERA_LAG_FRAMES}, "
-                         "0 disables compensation). Fractional values are allowed and "
-                         f"often needed: at {HAND_POLL_HZ} Hz hand/head/controller poll "
-                         "vs. camera fps, half a camera frame is one poll tick, so "
-                         "e.g. 3.5 is a legitimate answer, not just 3 or 4")
-    ap.add_argument("--manus-plugin-dir", type=Path, default=MANUS_PLUGIN_DIR,
-                    help=f"plugin ROOT holding manus/plugin.yaml, not manus/ itself "
-                         f"(default: {MANUS_PLUGIN_DIR})")
-    ap.add_argument("--wrist-source", choices=("controller", "hand_tracking", "auto"),
-                    default=None,
-                    help="Which device positions the Manus wrist; sets MANUS_WRIST_SOURCE "
-                         f"for the plugin process (default: {DEFAULT_WRIST_SOURCE})")
-    ap.add_argument("--hand-frame", choices=HAND_FRAMES, default=None,
-                    help=f"'{HAND_FRAME_STAGE}': world poses, {hand_feature_dim(HAND_FRAME_STAGE)} "
-                         f"floats/hand. '{HAND_FRAME_LOCAL}': wrist-relative hand shape, "
-                         f"{hand_feature_dim(HAND_FRAME_LOCAL)} floats/hand (wrist dropped, it is "
-                         f"identity). Default: {HAND_FRAME_STAGE}")
+    ap.add_argument(
+        "--encoder",
+        default=None,
+        help="ffmpeg encoder (default: h264_nvenc; 'h264' is software "
+        "libx264 and cannot keep up with four cameras)",
+    )
+    ap.add_argument(
+        "--cameras",
+        nargs="*",
+        default=None,
+        help="name=topic pairs; defaults to the four head/wrist cameras",
+    )
+    ap.add_argument(
+        "--no-hand",
+        action="store_true",
+        help="skip glove + head pose + controller capture entirely "
+        "(e.g. when no CloudXR client is connected at all)",
+    )
+    ap.add_argument(
+        "--no-manus",
+        action="store_true",
+        help="keep head pose + controller capture but skip just the Manus "
+        "glove (e.g. gloves are off/charging but headset+controllers "
+        "are still on); implied by --no-hand",
+    )
+    ap.add_argument(
+        "--camera-lag-frames",
+        type=float,
+        default=None,
+        help="how many camera frames the cameras lag every other sensor; "
+        "the hand and controller columns are taken that far back so "
+        f"they match the image (default: {DEFAULT_CAMERA_LAG_FRAMES}, "
+        "0 disables compensation). Fractional values are allowed and "
+        f"often needed: at {HAND_POLL_HZ} Hz hand/head/controller poll "
+        "vs. camera fps, half a camera frame is one poll tick, so "
+        "e.g. 3.5 is a legitimate answer, not just 3 or 4",
+    )
+    ap.add_argument(
+        "--manus-plugin-dir",
+        type=Path,
+        default=MANUS_PLUGIN_DIR,
+        help=f"plugin ROOT holding manus/plugin.yaml, not manus/ itself "
+        f"(default: {MANUS_PLUGIN_DIR})",
+    )
+    ap.add_argument(
+        "--wrist-source",
+        choices=("controller", "hand_tracking", "auto"),
+        default=None,
+        help="Which device positions the Manus wrist; sets MANUS_WRIST_SOURCE "
+        f"for the plugin process (default: {DEFAULT_WRIST_SOURCE})",
+    )
+    ap.add_argument(
+        "--hand-frame",
+        choices=HAND_FRAMES,
+        default=None,
+        help=f"'{HAND_FRAME_STAGE}': world poses, {hand_feature_dim(HAND_FRAME_STAGE)} "
+        f"floats/hand. '{HAND_FRAME_LOCAL}': wrist-relative hand shape, "
+        f"{hand_feature_dim(HAND_FRAME_LOCAL)} floats/hand (wrist dropped, it is "
+        f"identity). Default: {HAND_FRAME_STAGE}",
+    )
+    ap.add_argument(
+        "--data-file-size-mb",
+        type=float,
+        default=None,
+        help="roll to a new data/video file once the current one would "
+        "exceed this size (default: 0.001MB -- smaller than any real "
+        "episode's data, so save_episode() always rolls to a fresh "
+        "file and closes/footer-finalizes the previous one right "
+        "away, i.e. one file per episode). LeRobot's own default is "
+        "100MB/200MB, which packs many episodes into one file behind "
+        "a single ParquetWriter that only writes its footer on "
+        "rollover/finalize -- if the process dies before that, every "
+        "episode still buffered in that file is lost, not just the "
+        "one being recorded (this bit us: 42 episodes gone from one "
+        "mid-session crash). Raise this (e.g. to 100) once the "
+        "pipeline is trusted not to crash mid-session and you'd "
+        "rather have fewer, bigger files for training.",
+    )
     args = ap.parse_args()
 
     cfg: dict = {}
@@ -969,12 +1125,12 @@ def main() -> int:
     def get(cli_val, key, default):
         return cli_val if cli_val is not None else cfg.get(key, default)
 
-    root        = Path(get(args.root,       "root",       None)).expanduser()
-    task        = get(args.task,            "task",       None)
-    fps         = get(args.fps,             "fps",        30)
-    state_dim   = get(args.state_dim,       "state_dim",  6)
-    action_dim  = get(args.action_dim,      "action_dim", 6)
-    robot_type  = get(args.robot_type,      "robot_type", "sensing_gmsl2_rig")
+    root = Path(get(args.root, "root", None)).expanduser()
+    task = get(args.task, "task", None)
+    fps = get(args.fps, "fps", 30)
+    state_dim = get(args.state_dim, "state_dim", 6)
+    action_dim = get(args.action_dim, "action_dim", 6)
+    robot_type = get(args.robot_type, "robot_type", "sensing_gmsl2_rig")
     # h264_nvenc, not software h264: libx264 measured 39.7 frames/s on this board
     # against the 120 four cameras need, and worse in practice because LeRobot
     # passes g=2, making every other frame a keyframe. The shortfall showed up as
@@ -984,46 +1140,65 @@ def main() -> int:
     # An earlier note here said pyav cannot open h264_nvenc on Jetson because
     # avcodec_open2 fails. That was an incomplete JetPack install, not the codec;
     # it opens and encodes here now. Use --encoder h264 to go back to software.
-    encoder     = get(args.encoder,         "encoder",    "h264_nvenc")
+    encoder = get(args.encoder, "encoder", "h264_nvenc")
+    data_file_size_mb = get(args.data_file_size_mb, "data_file_size_mb", 0.001)
     wrist_source = get(args.wrist_source, "wrist_source", DEFAULT_WRIST_SOURCE)
-    camera_lag_frames = get(args.camera_lag_frames, "camera_lag_frames",
-                            DEFAULT_CAMERA_LAG_FRAMES)
-    hand_frame   = get(args.hand_frame,   "hand_frame",   HAND_FRAME_STAGE)
+    camera_lag_frames = get(
+        args.camera_lag_frames, "camera_lag_frames", DEFAULT_CAMERA_LAG_FRAMES
+    )
+    hand_frame = get(args.hand_frame, "hand_frame", HAND_FRAME_STAGE)
     # Config-only: seven numbers per hand is not a command line. Absent means
     # "keep the plugin's own kLeft/RightHandOffset", which is exact; supplying it
     # makes the recorder strip that anchor and re-apply this one.
     aim_to_wrist = cfg.get("aim_to_wrist")
-    use_hand      = not args.no_hand
+    use_hand = not args.no_hand
     # --no-hand implies --no-manus: no session running means no glove plugin either.
     collect_hands = use_hand and not args.no_manus
 
     if hand_frame not in HAND_FRAMES:
-        print(f"ERROR: hand_frame must be one of {HAND_FRAMES}, got {hand_frame!r}",
-              file=sys.stderr)
+        print(
+            f"ERROR: hand_frame must be one of {HAND_FRAMES}, got {hand_frame!r}",
+            file=sys.stderr,
+        )
         return 1
     if aim_to_wrist is not None:
         if hand_frame != HAND_FRAME_STAGE:
-            print(f"ERROR: 'aim_to_wrist' only applies to hand_frame='{HAND_FRAME_STAGE}'; "
-                  f"under '{HAND_FRAME_LOCAL}' the anchor is removed entirely, so an "
-                  f"offset would have nothing to act on.", file=sys.stderr)
+            print(
+                f"ERROR: 'aim_to_wrist' only applies to hand_frame='{HAND_FRAME_STAGE}'; "
+                f"under '{HAND_FRAME_LOCAL}' the anchor is removed entirely, so an "
+                f"offset would have nothing to act on.",
+                file=sys.stderr,
+            )
             return 1
         for side in ("left", "right"):
             spec = aim_to_wrist.get(side)
             if spec is None:
-                print(f"ERROR: 'aim_to_wrist' must define both 'left' and 'right'; "
-                      f"missing {side!r}.", file=sys.stderr)
+                print(
+                    f"ERROR: 'aim_to_wrist' must define both 'left' and 'right'; "
+                    f"missing {side!r}.",
+                    file=sys.stderr,
+                )
                 return 1
-            if len(spec.get("position", [])) != 3 or len(spec.get("quaternion", [])) != 4:
-                print(f"ERROR: aim_to_wrist.{side} needs position[3] and quaternion[4] "
-                      f"(qx, qy, qz, qw).", file=sys.stderr)
+            if (
+                len(spec.get("position", [])) != 3
+                or len(spec.get("quaternion", [])) != 4
+            ):
+                print(
+                    f"ERROR: aim_to_wrist.{side} needs position[3] and quaternion[4] "
+                    f"(qx, qy, qz, qw).",
+                    file=sys.stderr,
+                )
                 return 1
             n = float(np.linalg.norm(spec["quaternion"]))
             if abs(n - 1.0) > 1e-3:
                 # Silently normalising would hide a transposed or wxyz-ordered
                 # quaternion, which stays unit-norm and produces a plausible but
                 # wrong hand for the entire dataset.
-                print(f"ERROR: aim_to_wrist.{side}.quaternion has norm {n:.6f}, expected 1. "
-                      f"Check the order is [qx, qy, qz, qw].", file=sys.stderr)
+                print(
+                    f"ERROR: aim_to_wrist.{side}.quaternion has norm {n:.6f}, expected 1. "
+                    f"Check the order is [qx, qy, qz, qw].",
+                    file=sys.stderr,
+                )
                 return 1
 
     # Set before TeleopSession forks the plugin, which inherits this environment.
@@ -1033,12 +1208,16 @@ def main() -> int:
         os.environ.setdefault("MANUS_WRIST_SOURCE", wrist_source)
 
     if root is None or str(root) in ("", "None"):
-        print("ERROR: dataset root not set (use --root or set 'root' in config.json)",
-              file=sys.stderr)
+        print(
+            "ERROR: dataset root not set (use --root or set 'root' in config.json)",
+            file=sys.stderr,
+        )
         return 1
     if not task:
-        print("ERROR: task not set (use --task or set 'task' in config.json)",
-              file=sys.stderr)
+        print(
+            "ERROR: task not set (use --task or set 'task' in config.json)",
+            file=sys.stderr,
+        )
         return 1
 
     cameras = DEFAULT_CAMERAS
@@ -1063,8 +1242,11 @@ def main() -> int:
     if not buf.wait_for_all(list(cameras), timeout=30.0):
         missing = set(cameras) - set(buf.snapshot())
         print(f"ERROR: no frames from {sorted(missing)}", file=sys.stderr)
-        print("  Check that all cameras are publishing and that RMW_IMPLEMENTATION /\n"
-              "  CYCLONEDDS_URI match the camera bringup.", file=sys.stderr)
+        print(
+            "  Check that all cameras are publishing and that RMW_IMPLEMENTATION /\n"
+            "  CYCLONEDDS_URI match the camera bringup.",
+            file=sys.stderr,
+        )
         teardown()
         return 1
 
@@ -1126,7 +1308,7 @@ def main() -> int:
             # Shape and names both follow hand_frame, so info.json stays self-describing:
             # a 168-wide column whose first name is "thumb_metacarpal" is unambiguously
             # wrist-local, and nothing downstream has to be told which mode produced it.
-            hand_dim   = hand_feature_dim(hand_frame)
+            hand_dim = hand_feature_dim(hand_frame)
             hand_names = hand_joint_names(hand_frame)
             features["observation.hand_left"] = {
                 "dtype": "float32",
@@ -1154,29 +1336,57 @@ def main() -> int:
         use_videos=True,
         streaming_encoding=True,
         rgb_encoder=rgb_encoder,
+        # Deliberately smaller than any single episode's data/video, so every
+        # save_episode() rolls to a fresh file and closes (footer-finalizes) the
+        # previous one immediately. See --data-file-size-mb help for why.
+        data_files_size_in_mb=data_file_size_mb,
+        video_files_size_in_mb=data_file_size_mb,
+        # LeRobot separately buffers episode *index* rows (meta/episodes/*.parquet,
+        # the start/end frame + chunk/file pointers save_episode() needs to find an
+        # episode's data again) and only writes that buffer out every 10 episodes
+        # by default. A crash between flushes orphans however many already-closed,
+        # perfectly valid data/video files came before it -- the raw frames are
+        # still on disk, but nothing points at them. Flush every episode so the
+        # index never lags behind what data_files_size_in_mb already made durable.
+        metadata_buffer_size=1,
     )
 
     cam_names = list(cameras.keys())
     print(f"\nTask    : {task}")
     print(f"Root    : {root}")
     print(f"Encoder : {encoder}")
+    print(
+        f"Data/video file size cap: {data_file_size_mb}MB "
+        f"(one episode per file below this size)"
+    )
     if use_hand:
         if collect_hands:
-            print(f"Hand    : Manus glove ({hand_feature_dim(hand_frame)} floats/hand × 2, "
-                  f"frame={hand_frame}"
-                  + (", custom aim_to_wrist" if aim_to_wrist else "") + ")")
-            print(f"Wrist   : {os.environ.get('MANUS_WRIST_SOURCE', 'auto')} "
-                  f"(confirm against the plugin's 'wrist source:' line below)")
+            print(
+                f"Hand    : Manus glove ({hand_feature_dim(hand_frame)} floats/hand × 2, "
+                f"frame={hand_frame}"
+                + (", custom aim_to_wrist" if aim_to_wrist else "")
+                + ")"
+            )
+            print(
+                f"Wrist   : {os.environ.get('MANUS_WRIST_SOURCE', 'auto')} "
+                f"(confirm against the plugin's 'wrist source:' line below)"
+            )
         else:
-            print("Hand    : disabled (--no-manus); head pose + controllers still recorded")
+            print(
+                "Hand    : disabled (--no-manus); head pose + controllers still recorded"
+            )
         print(f"Head    : Pico head pose ({HEAD_POSE_DIM} floats, STAGE space)")
         print(f"Ctrl    : grip pose + validity ({CONTROLLER_POSE_DIM} floats × 2)")
         if camera_lag_frames:
-            print(f"Lag     : hand/controller taken {camera_lag_frames} frames "
-                  f"({camera_lag_frames * 1000.0 / fps:.0f} ms) back to match the cameras")
+            print(
+                f"Lag     : hand/controller taken {camera_lag_frames} frames "
+                f"({camera_lag_frames * 1000.0 / fps:.0f} ms) back to match the cameras"
+            )
         else:
-            print("Lag     : compensation disabled; hand/controller are the newest "
-                  "samples, so they lead the images")
+            print(
+                "Lag     : compensation disabled; hand/controller are the newest "
+                "samples, so they lead the images"
+            )
     else:
         print("Hand    : disabled (--no-hand)")
         print("Head    : disabled (--no-hand)")
@@ -1189,12 +1399,19 @@ def main() -> int:
     # Use a no-op context when hand capture is disabled so the episode loop is
     # identical in both cases.
     class _NoOpCtx:
-        def __enter__(self): return None
-        def __exit__(self, *_): pass
+        def __enter__(self):
+            return None
 
-    hand_ctx = (ManusHandBuffer(args.manus_plugin_dir, hand_frame, aim_to_wrist,
-                                collect_hands=collect_hands)
-                if use_hand else _NoOpCtx())
+        def __exit__(self, *_):
+            pass
+
+    hand_ctx = (
+        ManusHandBuffer(
+            args.manus_plugin_dir, hand_frame, aim_to_wrist, collect_hands=collect_hands
+        )
+        if use_hand
+        else _NoOpCtx()
+    )
 
     with hand_ctx as hand_buf:
         if use_hand and hand_buf is not None:
@@ -1203,15 +1420,19 @@ def main() -> int:
                 if hand_buf.wait_ready(timeout=30.0):
                     print("  Manus glove ready.\n")
                 else:
-                    print("  WARNING: no glove data yet; hand features will be zeros "
-                          "until the glove connects.\n")
+                    print(
+                        "  WARNING: no glove data yet; hand features will be zeros "
+                        "until the glove connects.\n"
+                    )
             else:
                 print("Waiting for head/controller data (up to 30 s)...")
                 if hand_buf.wait_ready(timeout=30.0):
                     print("  Head/controller ready.\n")
                 else:
-                    print("  WARNING: no head/controller data yet; those columns "
-                          "will be zeros until a client connects.\n")
+                    print(
+                        "  WARNING: no head/controller data yet; those columns "
+                        "will be zeros until a client connects.\n"
+                    )
 
         # ------------------------------------------------------ Episode loop
         try:
@@ -1228,10 +1449,22 @@ def main() -> int:
                 result: dict = {}
                 t = threading.Thread(
                     target=lambda: result.update(
-                        zip(("n", "drops", "skips", "unmatched"),
-                            record_episode(buf, hand_buf, dataset, cam_names, task,
-                                           fps, state_dim, action_dim, stop_evt,
-                                           camera_lag_frames, collect_hands))
+                        zip(
+                            ("n", "drops", "skips", "unmatched"),
+                            record_episode(
+                                buf,
+                                hand_buf,
+                                dataset,
+                                cam_names,
+                                task,
+                                fps,
+                                state_dim,
+                                action_dim,
+                                stop_evt,
+                                camera_lag_frames,
+                                collect_hands,
+                            ),
+                        )
                     ),
                     daemon=True,
                 )
@@ -1243,7 +1476,7 @@ def main() -> int:
                         stop_evt.set()
 
                 t.join()
-                n     = result.get("n", 0)
+                n = result.get("n", 0)
                 drops = result.get("drops", 0)
                 skips = result.get("skips", 0)
                 unmatched = result.get("unmatched", 0)
@@ -1253,8 +1486,9 @@ def main() -> int:
                 # frames per camera and the episode is silently desynced. Read the
                 # counters before save_episode(); start_episode() resets them.
                 enc = getattr(dataset.writer, "_streaming_encoder", None)
-                enc_drops = {k: v for k, v in
-                             getattr(enc, "_dropped_frames", {}).items() if v}
+                enc_drops = {
+                    k: v for k, v in getattr(enc, "_dropped_frames", {}).items() if v
+                }
 
                 print(f"Episode {ep_idx}: {n} frames ({n / fps:.1f}s at {fps} fps)")
                 # pop_latest() counted these all along but nobody ever read the
@@ -1265,44 +1499,104 @@ def main() -> int:
                 # frames deep each camera queue sat beyond the one that was kept.
                 if skips:
                     per_cam = skips / max(n * len(cam_names), 1)
-                    print(f"  NOTE: {skips} stale frames discarded "
-                          f"({per_cam:.2f} per camera per row): the recording loop "
-                          f"is running behind the cameras.")
+                    print(
+                        f"  NOTE: {skips} stale frames discarded "
+                        f"({per_cam:.2f} per camera per row): the recording loop "
+                        f"is running behind the cameras."
+                    )
                 if unmatched:
-                    print(f"  WARNING: {unmatched} rows discarded with no pose within "
-                          f"half a frame of {camera_lag_frames} frames ago. The hand "
-                          f"poll thread is not keeping up, or the lag exceeds the "
-                          f"{HAND_HISTORY_SECONDS:.0f}s of history kept.")
+                    print(
+                        f"  WARNING: {unmatched} rows discarded with no pose within "
+                        f"half a frame of {camera_lag_frames} frames ago. The hand "
+                        f"poll thread is not keeping up, or the lag exceeds the "
+                        f"{HAND_HISTORY_SECONDS:.0f}s of history kept."
+                    )
                 if drops:
-                    print(f"  WARNING: {drops} synced frame groups dropped (queue overflow)")
+                    print(
+                        f"  WARNING: {drops} synced frame groups dropped (queue overflow)"
+                    )
                 if enc_drops:
                     for cam, c in sorted(enc_drops.items()):
                         print(f"  ERROR: encoder dropped {c} frame(s) for {cam}")
-                    print("  This episode is DESYNCED: parquet rows outnumber video "
-                          "frames, so row N no longer matches video frame N.")
+                    print(
+                        "  This episode is DESYNCED: parquet rows outnumber video "
+                        "frames, so row N no longer matches video frame N."
+                    )
 
-                print("Save this episode?  y = save   n = discard", end="  ", flush=True)
+                zero_rows = find_all_zero_rows(dataset, collect_hands)
+                if zero_rows:
+                    for col, idx in sorted(zero_rows.items()):
+                        preview = idx[:5]
+                        more = f" (+{len(idx) - 5} more)" if len(idx) > 5 else ""
+                        print(
+                            f"  ERROR: {col} is all-zero for {len(idx)} row(s), "
+                            f"e.g. frame {preview}{more} -- device gave no data "
+                            f"at all, not just an isolated tracking dropout."
+                        )
+
+                print(
+                    "Save this episode?  y = save   n = discard", end="  ", flush=True
+                )
                 while True:
                     ch = getch()
                     if ch == "y":
+                        if zero_rows:
+                            print(
+                                "\n  Cannot save: all-zero rows above would silently "
+                                "corrupt this episode. Press 'n' to discard.",
+                                end="  ",
+                                flush=True,
+                            )
+                            continue
                         if n > 0:
                             dataset.save_episode()
-                            print(f"\nSaved episode {ep_idx}. "
-                                  f"Total: {dataset.meta.total_episodes}.")
+                            print(
+                                f"\nSaved episode {ep_idx}. "
+                                f"Total: {dataset.meta.total_episodes}."
+                            )
                         else:
                             dataset.clear_episode_buffer(delete_images=True)
                             print("\nEpisode was empty, nothing saved.")
                         break
                     if ch == "n":
                         dataset.clear_episode_buffer(delete_images=True)
-                        print(f"\nDiscarded episode {ep_idx}. "
-                              f"Total: {dataset.meta.total_episodes}.")
+                        print(
+                            f"\nDiscarded episode {ep_idx}. "
+                            f"Total: {dataset.meta.total_episodes}."
+                        )
                         break
 
         except KeyboardInterrupt:
             print("\n\nCtrl+C — finalizing dataset...")
+        except Exception as exc:
+            # Anything that blows up here (most likely dataset.save_episode(),
+            # e.g. an encoder thread crash) used to propagate straight past
+            # dataset.finalize() below -- the ParquetWriter for the current
+            # data/video file never got its footer written, and since it was
+            # shared across every episode buffered into that file, ALL of them
+            # went from "on disk" to "unreadable" at once, not just the one
+            # being saved. --data-file-size-mb keeps that blast radius to one
+            # episode, but we still need finalize() to actually run so
+            # already-completed files get closed out cleanly instead of the
+            # process just dying here. The recording session ends either way:
+            # whatever broke (e.g. the encoder threads) is not something this
+            # loop can safely keep recording through.
+            print(f"\n\nERROR during recording: {exc!r}")
+            print(
+                "Stopping the session so already-saved episodes stay intact "
+                "-- finalizing dataset..."
+            )
 
-    dataset.finalize()
+    try:
+        dataset.finalize()
+    except Exception as exc:
+        print(f"ERROR: dataset.finalize() failed too: {exc!r}", file=sys.stderr)
+        print(
+            "Whatever was already rolled into its own closed file (see "
+            "--data-file-size-mb) should still be openable; check "
+            f"{root} for the most recent chunk.",
+            file=sys.stderr,
+        )
     teardown()
     return 0
 

@@ -53,15 +53,15 @@ from scipy.spatial.transform import Rotation
 # ---------------------------------------------------------------------------
 # 路径常量（与 record_cameras.py 保持一致）
 # ---------------------------------------------------------------------------
-_REPO_ROOT       = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MANUS_PLUGIN_DIR = _REPO_ROOT / "install" / "plugins"
 
 # ---------------------------------------------------------------------------
 # 参数
 # ---------------------------------------------------------------------------
-POLL_HZ      = 60                           # 手柄数据轮询频率
-WORLD_UP     = np.array([0.0, 1.0, 0.0])   # 世界 +Y 方向
-DEFAULT_SECS = 5                            # 每个姿势的采集时长（秒）
+POLL_HZ = 60  # 手柄数据轮询频率
+WORLD_UP = np.array([0.0, 1.0, 0.0])  # 世界 +Y 方向
+DEFAULT_SECS = 5  # 每个姿势的采集时长（秒）
 
 # ---------------------------------------------------------------------------
 # Phase 定义
@@ -129,30 +129,37 @@ class ControllerBuffer:
     """
 
     def __init__(self) -> None:
-        from isaacteleop.retargeting_engine.deviceio_source_nodes import ControllersSource
+        from isaacteleop.retargeting_engine.deviceio_source_nodes import (
+            ControllersSource,
+        )
         from isaacteleop.retargeting_engine.interface import OutputCombiner
         from isaacteleop.retargeting_engine.tensor_types import ControllerInputIndex
-        from isaacteleop.teleop_session_manager import TeleopSession, TeleopSessionConfig
+        from isaacteleop.teleop_session_manager import (
+            TeleopSession,
+            TeleopSessionConfig,
+        )
 
         self._CI = ControllerInputIndex
         self._TeleopSession = TeleopSession
 
         controllers = ControllersSource(name="controllers")
-        pipeline = OutputCombiner({
-            "controller_left":  controllers.output(ControllersSource.LEFT),
-            "controller_right": controllers.output(ControllersSource.RIGHT),
-        })
+        pipeline = OutputCombiner(
+            {
+                "controller_left": controllers.output(ControllersSource.LEFT),
+                "controller_right": controllers.output(ControllersSource.RIGHT),
+            }
+        )
         self._cfg = TeleopSessionConfig(
             app_name="RotationCalib",
             pipeline=pipeline,
-            plugins=[],          # 旋转标定不需要 Manus 插件
+            plugins=[],  # 旋转标定不需要 Manus 插件
         )
         self._session = TeleopSession(self._cfg)
-        self._lock    = threading.Lock()
-        self._left    = np.zeros(8, dtype=np.float32)
-        self._right   = np.zeros(8, dtype=np.float32)
-        self._stop    = threading.Event()
-        self._ready   = threading.Event()
+        self._lock = threading.Lock()
+        self._left = np.zeros(8, dtype=np.float32)
+        self._right = np.zeros(8, dtype=np.float32)
+        self._stop = threading.Event()
+        self._ready = threading.Event()
         self._error: BaseException | None = None
         self._thread: threading.Thread | None = None
 
@@ -169,8 +176,7 @@ class ControllerBuffer:
                 time.sleep(2.0)
                 self._session = self._TeleopSession(self._cfg)
 
-        self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name="ctrl-poll")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="ctrl-poll")
         self._thread.start()
         return self
 
@@ -182,7 +188,7 @@ class ControllerBuffer:
             self._session.__exit__(*args)
         except Exception as exc:
             if "signal 2" in str(exc) or "Interrupt" in str(exc):
-                pass    # Ctrl+C 导致的插件退出，正常
+                pass  # Ctrl+C 导致的插件退出，正常
             else:
                 raise
 
@@ -193,21 +199,21 @@ class ControllerBuffer:
             return out
         CI = self._CI
         if bool(ctrl[CI.GRIP_IS_VALID]):
-            out[0:3] = np.asarray(ctrl[CI.GRIP_POSITION],    dtype=np.float32)
+            out[0:3] = np.asarray(ctrl[CI.GRIP_POSITION], dtype=np.float32)
             out[3:7] = np.asarray(ctrl[CI.GRIP_ORIENTATION], dtype=np.float32)
-            out[7]   = 1.0
+            out[7] = 1.0
         return out
 
     def _run(self) -> None:
-        period   = 1.0 / POLL_HZ
+        period = 1.0 / POLL_HZ
         deadline = time.monotonic() + period
         while not self._stop.is_set():
             try:
                 result = self._session.step()
-                left  = self._extract(result["controller_left"])
+                left = self._extract(result["controller_left"])
                 right = self._extract(result["controller_right"])
                 with self._lock:
-                    self._left  = left
+                    self._left = left
                     self._right = right
                 if left[7] > 0.5 or right[7] > 0.5:
                     self._ready.set()
@@ -235,7 +241,9 @@ class ControllerBuffer:
 # ---------------------------------------------------------------------------
 # 标定计算
 # ---------------------------------------------------------------------------
-def compute_R_wrist_ctrl(phase_cols: list[np.ndarray], side: str = "right") -> np.ndarray:
+def compute_R_wrist_ctrl(
+    phase_cols: list[np.ndarray], side: str = "right"
+) -> np.ndarray:
     """
     从三个 Phase 的列向量均值重建 R_wrist_ctrl，投影到 SO(3)。
 
@@ -258,10 +266,10 @@ def compute_R_wrist_ctrl(phase_cols: list[np.ndarray], side: str = "right") -> n
     if side == "left":
         cols[1] = -cols[1]
 
-    R_raw = np.column_stack(cols)               # (3, 3)
+    R_raw = np.column_stack(cols)  # (3, 3)
     U, _, Vt = np.linalg.svd(R_raw)
     R = U @ Vt
-    if np.linalg.det(R) < 0:                    # 修正反射（理论上不应触发）
+    if np.linalg.det(R) < 0:  # 修正反射（理论上不应触发）
         U[:, -1] *= -1
         R = U @ Vt
     return R
@@ -283,7 +291,7 @@ def rotation_error_deg(R_raw_cols: list[np.ndarray]) -> float:
 # ---------------------------------------------------------------------------
 # Phase 采集
 # ---------------------------------------------------------------------------
-AVG_FRAMES = 30   # 每次按 SPACE 采集并平均的帧数（≈ 0.5 s at 60 Hz）
+AVG_FRAMES = 30  # 每次按 SPACE 采集并平均的帧数（≈ 0.5 s at 60 Hz）
 
 
 def _current_col(buf: ControllerBuffer, side: str) -> np.ndarray | None:
@@ -303,8 +311,9 @@ def _angle_to_col(col_cur: np.ndarray, ref_col: np.ndarray) -> float:
     return float(np.degrees(np.arccos(abs(dot))))
 
 
-def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
-                  prev_cols: list[np.ndarray]) -> np.ndarray:
+def collect_phase(
+    buf: ControllerBuffer, phase: dict, side: str, prev_cols: list[np.ndarray]
+) -> np.ndarray:
     """
     手动触发采集一个 Phase。用 select 做非阻塞键盘检测，避免多线程竞争。
 
@@ -314,13 +323,15 @@ def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
 
     返回 (AVG_FRAMES, 3) float64。
     """
-    print(f"\n{'─'*60}")
+    print(f"\n{'─' * 60}")
     print(f"  Phase {phase['idx']}/3  ─  {phase['zh']}  ({phase['en']})")
-    print(f"{'─'*60}")
+    print(f"{'─' * 60}")
     print(phase["instruction"])
     if prev_cols:
-        tags = [f"Phase{i+1}" for i in range(len(prev_cols))]
-        print(f"\n  实时显示与 {', '.join(tags)} 的夹角，调整到接近 90° 后按 SPACE 采样。")
+        tags = [f"Phase{i + 1}" for i in range(len(prev_cols))]
+        print(
+            f"\n  实时显示与 {', '.join(tags)} 的夹角，调整到接近 90° 后按 SPACE 采样。"
+        )
     else:
         print("\n  对准后按 SPACE 采样（本 Phase 无角度约束）。")
     print("  按 r 重采本 Phase（重新对准后再按 SPACE）。\n")
@@ -337,9 +348,9 @@ def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
                 parts = []
                 for i, pc in enumerate(prev_cols):
                     angle = _angle_to_col(col_cur, pc)
-                    diff  = abs(angle - 90.0)
-                    flag  = "✓" if diff < 5 else ("△" if diff < 15 else "✗")
-                    parts.append(f"Phase{i+1}: {angle:5.1f}° [{flag}]")
+                    diff = abs(angle - 90.0)
+                    flag = "✓" if diff < 5 else ("△" if diff < 15 else "✗")
+                    parts.append(f"Phase{i + 1}: {angle:5.1f}° [{flag}]")
                 line = "  " + "   ".join(parts) + "   (目标 90°)   SPACE=采样"
             elif col_cur is not None:
                 line = "  对准目标轴后按 SPACE 采样"
@@ -353,12 +364,12 @@ def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
                 continue
             ch = sys.stdin.read(1)
 
-            if ch == "\x03":       # Ctrl+C
+            if ch == "\x03":  # Ctrl+C
                 print()
                 raise KeyboardInterrupt
 
             if ch == " ":
-                print()            # 结束实时行
+                print()  # 结束实时行
                 # ── 采集 AVG_FRAMES 帧并平均 ──────────────────────────
                 cols: list[np.ndarray] = []
                 for _ in range(AVG_FRAMES):
@@ -371,7 +382,9 @@ def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
                     time.sleep(1.0 / POLL_HZ)
 
                 if len(cols) < AVG_FRAMES // 2:
-                    print(f"  ✗ 有效帧不足（{len(cols)}/{AVG_FRAMES}），请检查手柄追踪后重新按 SPACE")
+                    print(
+                        f"  ✗ 有效帧不足（{len(cols)}/{AVG_FRAMES}），请检查手柄追踪后重新按 SPACE"
+                    )
                     continue
 
                 arr = np.array(cols, dtype=np.float64)
@@ -382,13 +395,13 @@ def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
                 if prev_cols:
                     angles = [f"{_angle_to_col(mean_col, pc):.1f}°" for pc in prev_cols]
                     angle_info = "  夹角：" + " / ".join(
-                        f"vs Phase{i+1}={a}" for i, a in enumerate(angles)
+                        f"vs Phase{i + 1}={a}" for i, a in enumerate(angles)
                     )
                 print(f"  ✓ Phase {phase['idx']} 采集完成{angle_info}")
                 return arr
 
             if ch in ("r", "R"):
-                print(f"\n  ↩ 重新对准，调整好后再按 SPACE...\n")
+                print("\n  ↩ 重新对准，调整好后再按 SPACE...\n")
                 # 继续同一 while 循环即可，无需重启线程
 
     finally:
@@ -398,17 +411,17 @@ def collect_phase(buf: ControllerBuffer, phase: dict, side: str,
 # ---------------------------------------------------------------------------
 # 保存
 # ---------------------------------------------------------------------------
-def save_results(out_dir: Path, side: str,
-                 phase_cols: list[np.ndarray],
-                 R: np.ndarray) -> Path:
+def save_results(
+    out_dir: Path, side: str, phase_cols: list[np.ndarray], R: np.ndarray
+) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"calib_rotation_{side}_{timestamp}.npz"
 
     save_dict: dict[str, np.ndarray] = {}
     for i, (ph, cols) in enumerate(zip(PHASES, phase_cols)):
-        save_dict[f"{side}_phase{i+1}_{ph['tag']}_cols"] = cols
-    save_dict[f"R_wrist_ctrl_{side}"]    = R
+        save_dict[f"{side}_phase{i + 1}_{ph['tag']}_cols"] = cols
+    save_dict[f"R_wrist_ctrl_{side}"] = R
     save_dict[f"quat_wrist_ctrl_{side}"] = Rotation.from_matrix(R).as_quat()  # xyzw
 
     np.savez(path, **save_dict)
@@ -420,7 +433,7 @@ def save_results(out_dir: Path, side: str,
 # ---------------------------------------------------------------------------
 def print_result(side: str, phase_cols: list[np.ndarray], R: np.ndarray) -> None:
     rot = Rotation.from_matrix(R)
-    q   = rot.as_quat()                          # xyzw
+    q = rot.as_quat()  # xyzw
     err = rotation_error_deg(phase_cols)
 
     # 三种常用欧拉角顺序
@@ -428,18 +441,24 @@ def print_result(side: str, phase_cols: list[np.ndarray], R: np.ndarray) -> None
     euler_zyx = rot.as_euler("zyx", degrees=True)
     euler_zyz = rot.as_euler("zyz", degrees=True)
 
-    print(f"\n{'═'*60}")
+    print(f"\n{'═' * 60}")
     print(f"  标定结果  —  {side.upper()} 手")
-    print(f"{'═'*60}")
+    print(f"{'═' * 60}")
     print(f"  R_wrist_ctrl_{side}:")
     for row in R:
         print(f"    [{row[0]:+.6f}  {row[1]:+.6f}  {row[2]:+.6f}]")
-    print(f"\n  四元数 [qx, qy, qz, qw]:")
+    print("\n  四元数 [qx, qy, qz, qw]:")
     print(f"    [{q[0]:+.6f}  {q[1]:+.6f}  {q[2]:+.6f}  {q[3]:+.6f}]")
-    print(f"\n  欧拉角（度）：")
-    print(f"    XYZ  :  rx={euler_xyz[0]:+7.2f}°  ry={euler_xyz[1]:+7.2f}°  rz={euler_xyz[2]:+7.2f}°")
-    print(f"    ZYX  :  rz={euler_zyx[0]:+7.2f}°  ry={euler_zyx[1]:+7.2f}°  rx={euler_zyx[2]:+7.2f}°")
-    print(f"    ZYZ  :  rz={euler_zyz[0]:+7.2f}°  ry={euler_zyz[1]:+7.2f}°  rz={euler_zyz[2]:+7.2f}°")
+    print("\n  欧拉角（度）：")
+    print(
+        f"    XYZ  :  rx={euler_xyz[0]:+7.2f}°  ry={euler_xyz[1]:+7.2f}°  rz={euler_xyz[2]:+7.2f}°"
+    )
+    print(
+        f"    ZYX  :  rz={euler_zyx[0]:+7.2f}°  ry={euler_zyx[1]:+7.2f}°  rx={euler_zyx[2]:+7.2f}°"
+    )
+    print(
+        f"    ZYZ  :  rz={euler_zyz[0]:+7.2f}°  ry={euler_zyz[1]:+7.2f}°  rz={euler_zyz[2]:+7.2f}°"
+    )
     print(f"\n  正交性误差（三轴对齐质量）：{err:.2f}°", end="")
     if err < 5.0:
         print("  ✓ 良好")
@@ -452,13 +471,12 @@ def print_result(side: str, phase_cols: list[np.ndarray], R: np.ndarray) -> None
 # ---------------------------------------------------------------------------
 # 单侧标定流程
 # ---------------------------------------------------------------------------
-def calibrate_one_side(buf: ControllerBuffer, side: str,
-                       out_dir: Path) -> None:
+def calibrate_one_side(buf: ControllerBuffer, side: str, out_dir: Path) -> None:
     assert side in ("left", "right")
-    print(f"\n{'━'*60}")
+    print(f"\n{'━' * 60}")
     print(f"  开始标定：{side.upper()} 手")
-    print(f"  共 3 个姿势，按 SPACE 采样，按 r 重采当前姿势")
-    print(f"{'━'*60}")
+    print("  共 3 个姿势，按 SPACE 采样，按 r 重采当前姿势")
+    print(f"{'━' * 60}")
 
     phase_cols: list[np.ndarray] = []
     for phase in PHASES:
@@ -482,12 +500,18 @@ def main() -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--side", choices=("left", "right", "both"),
-                    default="right",
-                    help="标定哪只手（默认：right）")
-    ap.add_argument("--out", type=Path,
-                    default=Path(__file__).parent / "calib_data" / "controller",
-                    help="输出目录（默认：calib_data/controller/，与此脚本同级）")
+    ap.add_argument(
+        "--side",
+        choices=("left", "right", "both"),
+        default="right",
+        help="标定哪只手（默认：right）",
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).parent / "calib_data" / "controller",
+        help="输出目录（默认：calib_data/controller/，与此脚本同级）",
+    )
     args = ap.parse_args()
 
     sides = ["left", "right"] if args.side == "both" else [args.side]
@@ -502,7 +526,7 @@ def main() -> int:
         with ControllerBuffer() as buf:
             print("等待手柄连接（最多 30 秒）...", end="", flush=True)
             if not buf.wait_ready(timeout=30.0):
-                print(f"\n错误：30 秒内未收到有效手柄数据", file=sys.stderr)
+                print("\n错误：30 秒内未收到有效手柄数据", file=sys.stderr)
                 return 1
             print(" ✓")
 

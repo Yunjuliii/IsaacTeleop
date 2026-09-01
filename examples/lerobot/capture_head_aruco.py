@@ -48,7 +48,13 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 
-from charuco_common import ARUCO_DICTS, MIN_CHARUCO_CORNERS, add_charuco_args, build_board, detect_charuco
+from charuco_common import (
+    ARUCO_DICTS,
+    MIN_CHARUCO_CORNERS,
+    add_charuco_args,
+    build_board,
+    detect_charuco,
+)
 
 DEFAULT_OUT = Path(__file__).parent / "calib_data" / "pico_to_head"
 
@@ -68,17 +74,22 @@ class StereoBuffer(Node):
         super().__init__("head_aruco_collector")
         self._lock = threading.Lock()
         self._latest: dict[str, np.ndarray] = {}
-        qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
-                         history=HistoryPolicy.KEEP_LAST, depth=1)
-        self.create_subscription(Image, left_topic,
-                                 lambda m: self._cb(m, "left"), qos)
-        self.create_subscription(Image, right_topic,
-                                 lambda m: self._cb(m, "right"), qos)
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self.create_subscription(Image, left_topic, lambda m: self._cb(m, "left"), qos)
+        self.create_subscription(
+            Image, right_topic, lambda m: self._cb(m, "right"), qos
+        )
         self.get_logger().info(f"Subscribed: left={left_topic} right={right_topic}")
 
     def _cb(self, msg: Image, name: str) -> None:
         if msg.encoding != "rgb8":
-            self.get_logger().warn(f"{name}: expected rgb8, got {msg.encoding}", once=True)
+            self.get_logger().warn(
+                f"{name}: expected rgb8, got {msg.encoding}", once=True
+            )
             return
         buf = np.frombuffer(msg.data, dtype=np.uint8)
         row = msg.width * 3
@@ -119,21 +130,32 @@ def check_charuco(img_rgb: np.ndarray, board) -> tuple[bool, int]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--left-topic", default="/head/left/image_raw")
     ap.add_argument("--right-topic", default="/head/right/image_raw")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    ap.add_argument("--board", choices=("marker", "charuco"), default="marker",
-                    help="'marker': single ArUco marker (legacy, noisy depth). "
-                         "'charuco': ChArUco board (recommended, see module docstring)")
-    ap.add_argument("--marker-id", type=int, default=0,
-                    help="only used with --board marker")
-    add_charuco_args(ap)  # --dict is shared; --squares-x/y, --square/marker-size are charuco-only
-    ap.add_argument("--keep-existing", action="store_true",
-                    help="不清空 --out 目录里已有的旧截图（默认每次运行会先清空，"
-                         "避免这次没截够的编号残留上次的旧图，被 "
-                         "solve_pico_to_head_extrinsics.py 误当成新数据用）")
+    ap.add_argument(
+        "--board",
+        choices=("marker", "charuco"),
+        default="marker",
+        help="'marker': single ArUco marker (legacy, noisy depth). "
+        "'charuco': ChArUco board (recommended, see module docstring)",
+    )
+    ap.add_argument(
+        "--marker-id", type=int, default=0, help="only used with --board marker"
+    )
+    add_charuco_args(
+        ap
+    )  # --dict is shared; --squares-x/y, --square/marker-size are charuco-only
+    ap.add_argument(
+        "--keep-existing",
+        action="store_true",
+        help="不清空 --out 目录里已有的旧截图（默认每次运行会先清空，"
+        "避免这次没截够的编号残留上次的旧图，被 "
+        "solve_pico_to_head_extrinsics.py 误当成新数据用）",
+    )
     args = ap.parse_args()
 
     if args.board == "marker":
@@ -144,12 +166,16 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     if not args.keep_existing:
-        stale = sorted(args.out.glob("head_left_*.png")) + sorted(args.out.glob("head_right_*.png"))
+        stale = sorted(args.out.glob("head_left_*.png")) + sorted(
+            args.out.glob("head_right_*.png")
+        )
         if stale:
             for f in stale:
                 f.unlink()
-            print(f"已清空 {args.out} 里 {len(stale)} 张旧截图，避免跟这次新采集的编号混用"
-                 f"（用 --keep-existing 保留旧图）")
+            print(
+                f"已清空 {args.out} 里 {len(stale)} 张旧截图，避免跟这次新采集的编号混用"
+                f"（用 --keep-existing 保留旧图）"
+            )
 
     rclpy.init()
     node = StereoBuffer(args.left_topic, args.right_topic)
@@ -176,9 +202,11 @@ def main() -> int:
     if args.board == "marker":
         print(f"ArUco 字典: DICT_{args.dict}  目标 ID: {args.marker_id}")
     else:
-        print(f"ChArUco 板: {args.squares_x}x{args.squares_y} 格 @ "
-              f"{args.square_size*1000:.1f}mm，marker {args.marker_size*1000:.1f}mm，"
-              f"DICT_{args.dict}（至少要检测到 {MIN_CHARUCO_CORNERS} 个角点才算 FOUND）")
+        print(
+            f"ChArUco 板: {args.squares_x}x{args.squares_y} 格 @ "
+            f"{args.square_size * 1000:.1f}mm，marker {args.marker_size * 1000:.1f}mm，"
+            f"DICT_{args.dict}（至少要检测到 {MIN_CHARUCO_CORNERS} 个角点才算 FOUND）"
+        )
     print(f"输出目录: {args.out}")
     print("\n's' = 截取一对（覆盖上一次）   'q' = 结束（只需要成功的一对就够）\n")
 
@@ -192,7 +220,7 @@ def main() -> int:
     n_captured = 0
     try:
         while True:
-            print(f"按 's' 截取（覆盖），'q' 退出...", end="\r", flush=True)
+            print("按 's' 截取（覆盖），'q' 退出...", end="\r", flush=True)
             ch = getch()
             if ch == "q":
                 break
@@ -204,20 +232,30 @@ def main() -> int:
             if args.board == "marker":
                 left_ok = check_marker(left_img, aruco_dict, args.marker_id)
                 right_ok = check_marker(right_img, aruco_dict, args.marker_id)
-                status = (f"left {'FOUND' if left_ok else 'NOT FOUND'} / "
-                         f"right {'FOUND' if right_ok else 'NOT FOUND'}")
+                status = (
+                    f"left {'FOUND' if left_ok else 'NOT FOUND'} / "
+                    f"right {'FOUND' if right_ok else 'NOT FOUND'}"
+                )
             else:
                 left_ok, left_n = check_charuco(left_img, board)
                 right_ok, right_n = check_charuco(right_img, board)
-                status = (f"left {'FOUND' if left_ok else 'NOT FOUND'} ({left_n} corners) / "
-                         f"right {'FOUND' if right_ok else 'NOT FOUND'} ({right_n} corners)")
+                status = (
+                    f"left {'FOUND' if left_ok else 'NOT FOUND'} ({left_n} corners) / "
+                    f"right {'FOUND' if right_ok else 'NOT FOUND'} ({right_n} corners)"
+                )
 
-            cv2.imwrite(str(args.out / f"head_left_{frame_i:04d}.png"),
-                       cv2.cvtColor(left_img, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(args.out / f"head_right_{frame_i:04d}.png"),
-                       cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(
+                str(args.out / f"head_left_{frame_i:04d}.png"),
+                cv2.cvtColor(left_img, cv2.COLOR_RGB2BGR),
+            )
+            cv2.imwrite(
+                str(args.out / f"head_right_{frame_i:04d}.png"),
+                cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR),
+            )
 
-            print(f"\n  已存 head_{{left,right}}_{frame_i:04d}.png（覆盖上一次）   {status}")
+            print(
+                f"\n  已存 head_{{left,right}}_{frame_i:04d}.png（覆盖上一次）   {status}"
+            )
             n_captured += 1
 
     except KeyboardInterrupt:
