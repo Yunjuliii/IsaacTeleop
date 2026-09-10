@@ -1,0 +1,404 @@
+{
+  "codebase_version": "v3.0",
+  "fps": 30,
+  "features": {
+    "observation.images.head_left": {
+      "dtype": "video",
+      "shape": [
+        480,
+        640,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 480,
+        "video.width": 640,
+        "video.codec": "h264",
+        "video.pix_fmt": "yuv420p",
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false,
+        "video.g": 4,
+        "video.crf": 23,
+        "video.preset": null,
+        "video.fast_decode": 0,
+        "video.video_backend": "pyav",
+        "video.extra_options": {},
+        "is_depth_map": false
+      }
+    },
+    "observation.images.head_right": {
+      "dtype": "video",
+      "shape": [
+        480,
+        640,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 480,
+        "video.width": 640,
+        "video.codec": "h264",
+        "video.pix_fmt": "yuv420p",
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false,
+        "video.g": 4,
+        "video.crf": 23,
+        "video.preset": null,
+        "video.fast_decode": 0,
+        "video.video_backend": "pyav",
+        "video.extra_options": {},
+        "is_depth_map": false
+      }
+    },
+    "observation.images.wrist_left": {
+      "dtype": "video",
+      "shape": [
+        480,
+        640,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 480,
+        "video.width": 640,
+        "video.codec": "h264",
+        "video.pix_fmt": "yuv420p",
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false,
+        "video.g": 4,
+        "video.crf": 23,
+        "video.preset": null,
+        "video.fast_decode": 0,
+        "video.video_backend": "pyav",
+        "video.extra_options": {},
+        "is_depth_map": false
+      }
+    },
+    "observation.images.wrist_right": {
+      "dtype": "video",
+      "shape": [
+        480,
+        640,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 480,
+        "video.width": 640,
+        "video.codec": "h264",
+        "video.pix_fmt": "yuv420p",
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false,
+        "video.g": 4,
+        "video.crf": 23,
+        "video.preset": null,
+        "video.fast_decode": 0,
+        "video.video_backend": "pyav",
+        "video.extra_options": {},
+        "is_depth_map": false
+      }
+    },
+    "observation.state": {
+      "dtype": "float32",
+      "shape": [
+        6
+      ],
+      "names": [
+        "motor_0",
+        "motor_1",
+        "motor_2",
+        "motor_3",
+        "motor_4",
+        "motor_5"
+      ]
+    },
+    "action": {
+      "dtype": "float32",
+      "shape": [
+        6
+      ],
+      "names": [
+        "motor_0",
+        "motor_1",
+        "motor_2",
+        "motor_3",
+        "motor_4",
+        "motor_5"
+      ]
+    },
+    "observation.head_pose": {
+      "dtype": "float32",
+      "shape": [
+        7
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw"
+      ]
+    },
+    "observation.controller_left": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "grip_x",
+        "grip_y",
+        "grip_z",
+        "grip_qx",
+        "grip_qy",
+        "grip_qz",
+        "grip_qw",
+        "grip_valid"
+      ]
+    },
+    "observation.controller_right": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "grip_x",
+        "grip_y",
+        "grip_z",
+        "grip_qx",
+        "grip_qy",
+        "grip_qz",
+        "grip_qw",
+        "grip_valid"
+      ]
+    },
+    "observation.hand_left": {
+      "dtype": "float32",
+      "shape": [
+        168
+      ],
+      "names": [
+        "thumb_metacarpal",
+        "thumb_proximal",
+        "thumb_distal",
+        "thumb_tip",
+        "index_metacarpal",
+        "index_proximal",
+        "index_intermediate",
+        "index_distal",
+        "index_tip",
+        "middle_metacarpal",
+        "middle_proximal",
+        "middle_intermediate",
+        "middle_distal",
+        "middle_tip",
+        "ring_metacarpal",
+        "ring_proximal",
+        "ring_intermediate",
+        "ring_distal",
+        "ring_tip",
+        "little_metacarpal",
+        "little_proximal",
+        "little_intermediate",
+        "little_distal",
+        "little_tip"
+      ]
+    },
+    "observation.hand_right": {
+      "dtype": "float32",
+      "shape": [
+        168
+      ],
+      "names": [
+        "thumb_metacarpal",
+        "thumb_proximal",
+        "thumb_distal",
+        "thumb_tip",
+        "index_metacarpal",
+        "index_proximal",
+        "index_intermediate",
+        "index_distal",
+        "index_tip",
+        "middle_metacarpal",
+        "middle_proximal",
+        "middle_intermediate",
+        "middle_distal",
+        "middle_tip",
+        "ring_metacarpal",
+        "ring_proximal",
+        "ring_intermediate",
+        "ring_distal",
+        "ring_tip",
+        "little_metacarpal",
+        "little_proximal",
+        "little_intermediate",
+        "little_distal",
+        "little_tip"
+      ]
+    },
+    "timestamp": {
+      "dtype": "float32",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "frame_index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "episode_index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "task_index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "observation.wrist_left_in_head_left": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    },
+    "observation.wrist_left_in_head_right": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    },
+    "observation.wrist_right_in_head_left": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    },
+    "observation.wrist_right_in_head_right": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    },
+    "observation.wrist_left_in_world": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    },
+    "observation.wrist_right_in_world": {
+      "dtype": "float32",
+      "shape": [
+        8
+      ],
+      "names": [
+        "x",
+        "y",
+        "z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "valid"
+      ]
+    }
+  },
+  "total_episodes": 25,
+  "total_frames": 3061,
+  "total_tasks": 1,
+  "chunks_size": 1000,
+  "data_files_size_in_mb": 100,
+  "video_files_size_in_mb": 200,
+  "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+  "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+  "robot_type": null,
+  "splits": {
+    "train": "0:25"
+  }
+}
