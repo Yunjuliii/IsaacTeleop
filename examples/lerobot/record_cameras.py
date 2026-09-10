@@ -50,6 +50,13 @@ Usage::
 Controls:  s = start episode · e = end · y = save · n = discard · Ctrl+C = quit
 """
 
+# Deferred annotation evaluation. LeRobot is imported inside main() so that
+# record_cameras_gstreamer.py can reuse the capture classes below without
+# pulling it in, but record_episode() and find_all_zero_rows() still name
+# LeRobotDataset in their signatures. Without this, those annotations are
+# evaluated at def time and importing this module raises NameError.
+from __future__ import annotations
+
 import argparse
 import collections
 import json
@@ -68,10 +75,6 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
-
-from lerobot.configs.video import RGBEncoderConfig
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
 
 DEFAULT_CAMERAS = {
     "head_left": "/head/left/image_raw",
@@ -704,6 +707,33 @@ class ManusHandBuffer:
                 return 0.0
             return self._history[-1][0] - self._history[0][0]
 
+    def drain_since(self, t_after: float) -> list[tuple]:
+        """Every held sample newer than ``t_after``, oldest first.
+
+        Lets a caller record the pose stream at its own rate instead of
+        collapsing it to one sample per camera frame, so the camera-to-pose
+        alignment can be redone offline without re-recording. Callers must
+        drain more often than the history is long (HAND_HISTORY_SECONDS),
+        because anything older has already been evicted from the deque.
+
+        Raises if the poll thread died, for the same reason latest() does.
+        """
+        if self._error is not None:
+            raise RuntimeError("Manus poll thread died") from self._error
+        out: list[tuple] = []
+        with self._lock:
+            # Newest first, stopping at the first already-seen sample: the
+            # deque is time-ordered, so everything past it is older still.
+            for entry in reversed(self._history):
+                if entry[0] <= t_after:
+                    break
+                out.append(entry)
+        out.reverse()
+        return [
+            (ts, left.copy(), right.copy(), head.copy(), cl.copy(), cr.copy())
+            for ts, left, right, head, cl, cr in out
+        ]
+
     def wait_ready(self, timeout: float = 30.0) -> bool:
         """Block until at least one frame has arrived, or timeout."""
         return self._ready.wait(timeout)
@@ -789,18 +819,23 @@ class CameraBuffer(Node):
     via hand_buf.latest() in the same recording tick.
     """
 
-    def __init__(self, cameras: dict[str, str]):
+    def __init__(
+        self,
+        cameras: dict[str, str],
+        queue_depth: int = FRAME_QUEUE_DEPTH,
+        qos_depth: int = 1,
+    ):
         super().__init__("lerobot_collector")
         self._lock = threading.Lock()
         self._latest: dict[str, tuple[np.ndarray, float, float]] = {}
         self._counts: dict[str, int] = {n: 0 for n in cameras}
         self._queues: dict[str, FrameQueue] = {
-            n: FrameQueue(FRAME_QUEUE_DEPTH) for n in cameras
+            n: FrameQueue(queue_depth) for n in cameras
         }
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1,
+            depth=qos_depth,
         )
         for name, topic in cameras.items():
             self.create_subscription(
@@ -848,6 +883,26 @@ class CameraBuffer(Node):
         for name in names:
             remaining = deadline - time.monotonic()
             frame = self._queues[name].pop_latest(remaining) if remaining > 0 else None
+            if frame is None:
+                for done, held in frames.items():
+                    self._queues[done].push_front(held)
+                return None
+            frames[name] = frame
+        return frames
+
+    def next_frames_fifo(self, names: list[str], timeout: float) -> dict | None:
+        """Return one queued frame per camera without discarding backlog.
+
+        This is used by the persistent-GStreamer recorder. Its encoder is opened
+        before an episode starts, so a short Python scheduling delay should be
+        recovered from the ROS/DDS queues instead of turning into an invisible
+        hole via :meth:`next_frames`'s newest-frame policy.
+        """
+        frames: dict[str, tuple[np.ndarray, float, float]] = {}
+        deadline = time.monotonic() + timeout
+        for name in names:
+            remaining = deadline - time.monotonic()
+            frame = self._queues[name].pop(remaining) if remaining > 0 else None
             if frame is None:
                 for done, held in frames.items():
                     self._queues[done].push_front(held)
@@ -1019,6 +1074,11 @@ def getch() -> str:
 
 
 def main() -> int:
+    # Keep these imports local so record_cameras_gstreamer.py can reuse the ROS
+    # and Manus capture primitives without importing LeRobot in its live process.
+    from lerobot.configs.video import RGBEncoderConfig
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1335,6 +1395,13 @@ def main() -> int:
         root=root,
         use_videos=True,
         streaming_encoding=True,
+        # Per-camera encoder queue. The default of 30 frames (1 s) is nearly consumed
+        # by NVENC start-up alone: opening four h264_nvenc encoders concurrently takes
+        # ~720 ms on this board, so ~22 frames pile up before the first one is encoded
+        # and any further hiccup overflows the queue. An overflow drops the video frame
+        # but still writes the parquet row (episode desynced by one frame from then on).
+        # 120 frames (4 s) leaves ~3 s of slack; costs ~0.9 MB x 120 x 4 cameras of RAM.
+        encoder_queue_maxsize=120,
         rgb_encoder=rgb_encoder,
         # Deliberately smaller than any single episode's data/video, so every
         # save_episode() rolls to a fresh file and closes (footer-finalizes) the

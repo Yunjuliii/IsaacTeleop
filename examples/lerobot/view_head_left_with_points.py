@@ -11,7 +11,7 @@ Usage::
     python3 view_head_left_with_points.py
     python3 view_head_left_with_points.py --topic /head/right/image_raw \
         --out-topic /head/right/points/compressed \
-        --points "201,225" "146,404" "520,225"
+        --points "148,404" "202,226" "522,225"
 
 On the viewing machine (same ROS_DOMAIN_ID / network):
 
@@ -28,7 +28,7 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage, Image
 
 # 用户提供的三个标注点（图像坐标系：原点左上角，x 向右，y 向下）。
-DEFAULT_POINTS = [(201, 225), (146, 404), (520, 225)]
+DEFAULT_POINTS = [(148, 404), (202, 226), (522, 225)]
 
 
 def parse_points(raw: list[str]) -> list[tuple[int, int]]:
